@@ -1,0 +1,13 @@
+[package]
+name = "check_journal"
+version = "0.1.0"
+authors = ["Christian Kauhaus <kc@flyingcircus.io>"]
+
+[dependencies]
+clap = "2.30"
+derive-error-chain = "0.11"
+error-chain = "0.11"
+reqwest = "0.8"
+serde_yaml = "0.7"
+subprocess = "0.1"
+regex = "1"
