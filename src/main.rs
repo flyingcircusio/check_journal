@@ -12,6 +12,7 @@ extern crate serde;
 extern crate serde_yaml;
 
 mod check;
+mod rules;
 
 use clap::Arg;
 use std::error::Error as ErrorTrait;
@@ -44,16 +45,16 @@ pub enum ErrorKind {
     #[error_chain(custom)]
     #[error_chain(description = r#"|_, _| "critical check result""#)]
     #[error_chain(display = r#"|crit, warn|
-                  write!(f, "{} critical lines, {} warning lines found", crit, warn)"#)]
+                  write!(f, "{} critical, {} warning line(s) found", crit, warn)"#)]
     Critical(usize, usize),
 
     #[error_chain(custom)]
     #[error_chain(description = r#"|_| "warning check result""#)]
-    #[error_chain(display = r#"|warn| write!(f, "{} warning lines found", warn)"#)]
+    #[error_chain(display = r#"|warn| write!(f, "{} warning line(s) found", warn)"#)]
     Warning(usize),
 
     #[error_chain(custom)]
-    #[error_chain(description = r#"|_| "unexpected journalctl behaviour""#)]
+    #[error_chain(description = r#"|_| "unexpected journalctl exit""#)]
     #[error_chain(display = r#"|s| write!(f, "journalctl failed with exit code {:?}", s)"#)]
     Journal(ExitStatus),
 
@@ -131,7 +132,7 @@ fn main() {
         )
         .get_matches();
 
-    let mut app = match check::App::try_from(&matches) {
+    let mut app = match check::Check::try_from(&matches) {
         Ok(app) => app,
         Err(e) => {
             output(Err(e));
@@ -139,7 +140,8 @@ fn main() {
         }
     };
 
-    let exit = output(app.run());
-    stdout().write(&app.out).ok();
+    let mut out = Vec::with_capacity(8192);
+    let exit = output(app.run(&mut out));
+    stdout().write(&out).ok();
     process::exit(exit)
 }
