@@ -11,6 +11,10 @@ extern crate reqwest;
 extern crate serde;
 extern crate serde_yaml;
 
+#[cfg(test)]
+#[macro_use]
+extern crate lazy_static;
+
 mod check;
 mod rules;
 
@@ -119,7 +123,7 @@ fn main() {
                 .short("l")
                 .long("limit-lines")
                 .value_name("N")
-                .default_value("100")
+                .default_value("50")
                 .help("Shows maximum N lines for critical/warning matches"),
         )
         .arg(
@@ -127,7 +131,7 @@ fn main() {
                 .short("b")
                 .long("limit-bytes")
                 .value_name("B")
-                .default_value("4096")
+                .default_value("8192")
                 .help("Truncates output in total to B bytes"),
         )
         .get_matches();

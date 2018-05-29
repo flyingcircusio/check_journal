@@ -1,0 +1,19 @@
+---
+criticalpatterns:
+      - '[Aa]bort|ABORT'
+      - '[Ee]rror|ERROR'
+
+criticalexceptions:
+      - 'timestamp:".*",level:"(error|warn)"'
+      - '0 failures 0 errors'
+      - 'Disconnecting: authentication failures \[preauth\]'
+
+warningpatterns:
+      - '[Ff]ail|FAIL'
+      - '[Ww]arn|WARN'
+
+warningexceptions:
+      - '0 failures 0 errors'
+      - 'graylogctl'
+      - 'node\[.*\]: Exception'
+      - 'update-news\[.*\]'

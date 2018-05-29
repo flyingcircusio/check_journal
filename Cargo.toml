@@ -13,3 +13,6 @@ serde = "1"
 serde_derive = "1"
 serde_yaml = "0.7"
 subprocess = "0.1"
+
+[dev-dependencies]
+lazy_static = "1"
