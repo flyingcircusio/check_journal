@@ -3,16 +3,6 @@ use rules::Rules;
 use std::io::Write;
 use subprocess::{ExitStatus, Popen, PopenConfig, Redirection};
 
-#[derive(Debug)]
-pub struct Check {
-    timeout: f32,
-    lines: usize,
-    bytes: usize,
-    journalctl: String,
-    span: String,
-    rules: Rules,
-}
-
 #[derive(Debug, Clone, Default)]
 struct Filtered<'a> {
     crit: Vec<&'a [u8]>,
@@ -23,6 +13,16 @@ impl<'a> Filtered<'a> {
     fn new() -> Self {
         Self::default()
     }
+}
+
+#[derive(Debug, Default)]
+pub struct Check {
+    timeout: f32,
+    lines: usize,
+    bytes: usize,
+    journalctl: String,
+    span: String,
+    rules: Rules,
 }
 
 impl Check {
@@ -56,10 +56,15 @@ impl Check {
         })
     }
 
-    fn report(&mut self, out: &mut Vec<u8>, journal_lines: &[u8]) -> Result<String> {
+    fn report(&self, out: &mut Vec<u8>, journal_lines: &[u8]) -> Result<String> {
         let res = self.filter(journal_lines);
         self.fmt_matches(out, "Critical", &res.crit);
         self.fmt_matches(out, "Warning", &res.warn);
+
+        if self.bytes > 0 && out.len() > self.bytes {
+            out.truncate(self.bytes);
+            out.extend_from_slice(b"[...]\n")
+        }
 
         match (res.crit.len(), res.warn.len()) {
             (0, 0) => Ok("no matches".into()),
@@ -68,13 +73,8 @@ impl Check {
         }
     }
 
-    fn examine(
-        &mut self,
-        out: &mut Vec<u8>,
-        exit: ExitStatus,
-        stdout: Vec<u8>,
-        stderr: Vec<u8>,
-    ) -> Result<String> {
+    fn examine(&self, out: &mut Vec<u8>, exit: ExitStatus, stdout: Vec<u8>, stderr: Vec<u8>)
+            -> Result<String> {
         match (exit, stdout, stderr) {
             (ExitStatus::Exited(0...1), ref o, ref e) if o.is_empty() && e.is_empty() => {
                 Ok("no output".into())
@@ -92,18 +92,19 @@ impl Check {
 
     pub fn run(&mut self, out: &mut Vec<u8>) -> Result<String> {
         let since = format!("--since=-{}", self.span);
+        let cmdline = &[&self.journalctl, "--no-pager", &since][..];
         let mut p = Popen::create(
-            &[&self.journalctl, "--no-pager", &since][..],
+            cmdline,
             PopenConfig {
-                stdin: Redirection::None,
+                stdin: Redirection::Pipe,
                 stdout: Redirection::Pipe,
                 stderr: Redirection::Pipe,
                 ..Default::default()
             },
         ).chain_err(|| format!("failed to execute '{}'", self.journalctl))?;
+        let (stdout, stderr) = p.communicate_bytes(Some(b""))?;
         let exit = p.wait()?;
-        let (stdout, stderr) = p.communicate_bytes(None)?;
-        // stdout/stderr is always some value b/o PopenConfig
+        // stdout/stderr is always some value b/o Redirection::Pipe
         self.examine(out, exit, stdout.unwrap(), stderr.unwrap())
     }
 }
@@ -118,5 +119,107 @@ impl<'a> Check {
             span: m.value_of("span").expect("default_value gone").into(),
             rules: Rules::load(m.value_of("rules").unwrap())?,
         })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use tests::FIXTURES;
+
+    fn stringify<'a>(res: Vec<&[u8]>) -> Vec<String> {
+        res.iter()
+            .map(|s| String::from_utf8_lossy(*s).into_owned())
+            .collect()
+    }
+
+    /// `Check` instance with sensible defaults
+    fn check_fac() -> Check {
+        let mut c = Check::default();
+        c.rules = Rules::load(FIXTURES.join("rules.yaml")).expect("load from file");
+        c.lines = 10;
+        c.bytes = 4096;
+        c
+    }
+
+    #[test]
+    fn filter_crit_warn() {
+        let c = check_fac();
+        let j = include_bytes!("../fixtures/journal.txt");
+        let res = c.filter(&j[..]);
+        assert_eq!(
+            stringify(res.crit),
+            vec![
+                "Mai 31 16:42:47 session[14529]: aborting",
+                "Mai 31 16:42:50 program[14133]: *** CRITICAL ERROR",
+                "Mai 31 16:43:20 program1[6094]: timestamp:\"1527780630\",level:\"abort\"",
+            ]
+        );
+        assert_eq!(
+            stringify(res.warn),
+            vec![
+                "Mai 31 16:42:47 session[14529]: assertion '!window->override_redirect' failed",
+                "Mai 31 16:42:49 user[14529]: 0 errors, 1 failures",
+            ]
+        );
+    }
+
+    #[test]
+    fn fmt_matches_should_list_matches() {
+        let c = check_fac();
+        let mut out = Vec::new();
+        c.fmt_matches(&mut out, "test1", &[b"first match", b"second match"]);
+        assert_eq!(
+            String::from_utf8_lossy(&out),
+            "\n*** test1 hits ***\n\
+             \n\
+             first match\n\
+             second match\n"
+        );
+    }
+
+    #[test]
+    fn fmt_matches_should_truncate_lines() {
+        let mut c = check_fac();
+        c.lines = 1;
+        let mut out = Vec::new();
+        c.fmt_matches(&mut out, "test2", &[b"first match", b"second match"]);
+        assert_eq!(
+            String::from_utf8_lossy(&out),
+            "\n*** test2 hits (truncated) ***\n\
+             \n\
+             first match\n"
+        );
+    }
+
+    #[test]
+    fn report_should_return_warn_crit_status() {
+        let c = check_fac();
+        let mut out = Vec::new();
+        assert_eq!(
+            c.report(&mut out, b"all fine").unwrap(),
+            "no matches".to_owned()
+        );
+        match c.report(&mut out, b"error").unwrap_err().kind() {
+            ErrorKind::Critical(n, m) => assert_eq!((*n, *m), (1, 0)),
+            e => panic!("unexpected error {:?}", e),
+        }
+        match c.report(&mut out, b"warning").unwrap_err().kind() {
+            ErrorKind::Warning(n) => assert_eq!(*n, 1),
+            e => panic!("unexpected error {:?}", e),
+        }
+        assert_eq!(String::from_utf8_lossy(&out), "\n*** Critical hits ***\n\nerror\n\n*** Warning hits ***\n\nwarning\n");
+    }
+
+    #[test]
+    fn report_should_truncate_output() {
+        let mut c= check_fac();
+        c.bytes = 50;
+        let mut out = Vec::new();
+        c.report(&mut out, b"error line\nwarning line\n").unwrap_err();
+        assert_eq!(
+            String::from_utf8_lossy(&out),
+            "\n*** Critical hits ***\n\nerror line\n\n*** Warning hi[...]\n"
+        )
     }
 }

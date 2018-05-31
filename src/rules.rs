@@ -98,9 +98,9 @@ mod test {
     fn load_from_file() {
         let r = Rules::load(FIXTURES.join("rules.yaml")).expect("load from file");
         assert_eq!(r.crit.matches.len(), 2);
-        assert_eq!(r.crit.except.len(), 3);
+        assert_eq!(r.crit.except.len(), 2);
         assert_eq!(r.warn.matches.len(), 2);
-        assert_eq!(r.warn.except.len(), 4);
+        assert_eq!(r.warn.except.len(), 3);
     }
 
     #[test]

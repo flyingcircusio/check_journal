@@ -118,8 +118,8 @@ fn main() {
                 .short("s")
                 .long("span")
                 .value_name("EXPR")
-                .default_value("600")
-                .help("Journal search time span (seconds; time suffixes accepted)"),
+                .default_value("600s")
+                .help("Reads journal entries from the last EXPR (time suffixes accepted)"),
         )
         .arg(
             Arg::with_name("lines")

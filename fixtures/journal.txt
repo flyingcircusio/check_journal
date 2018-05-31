@@ -1,0 +1,8 @@
+Mai 31 16:42:47 session[14529]: assertion '!window->override_redirect' failed
+Mai 31 16:42:47 session[14529]: aborting
+Mai 31 16:42:48 user[14529]: 0 errors, 0 failures
+Mai 31 16:42:49 user[14529]: 0 errors, 1 failures
+Mai 31 16:42:50 program[14133]: *** CRITICAL ERROR
+Mai 31 16:43:18 sensord[2138]:   cpu_fan: 0 RPM
+Mai 31 16:43:19 program0[6094]: timestamp:"1527780630",level:"error"
+Mai 31 16:43:20 program1[6094]: timestamp:"1527780630",level:"abort"
