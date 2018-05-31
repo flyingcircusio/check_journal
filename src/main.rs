@@ -18,6 +18,9 @@ extern crate lazy_static;
 mod check;
 mod rules;
 
+#[cfg(test)]
+mod tests;
+
 use clap::Arg;
 use std::error::Error as ErrorTrait;
 use std::io::{stdout, Write};

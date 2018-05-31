@@ -37,24 +37,11 @@ impl RegexSet {
 
 #[derive(Debug, Default)]
 pub struct Rules {
-    crit: RegexSet,
-    warn: RegexSet,
+    pub crit: RegexSet,
+    pub warn: RegexSet,
 }
 
 impl Rules {
-    pub fn match_push<'a>(
-        &self,
-        line: &'a [u8],
-        crit: &mut Vec<&'a [u8]>,
-        warn: &mut Vec<&'a [u8]>,
-    ) {
-        if self.crit.is_match(&line) {
-            crit.push(line);
-        } else if self.warn.is_match(&line) {
-            warn.push(line);
-        }
-    }
-
     fn try_from(source: &RulesFile) -> Result<Self> {
         Ok(Self {
             crit: RegexSet {
@@ -91,13 +78,9 @@ impl Rules {
 }
 
 #[cfg(test)]
-mod tests {
+mod test {
     use super::*;
-    use std::path::{Path, PathBuf};
-
-    lazy_static! {
-        static ref FIXTURES: PathBuf = Path::new(file!()).parent().unwrap().join("../fixtures");
-    }
+    use tests::FIXTURES;
 
     #[test]
     fn parse_failure_should_be_reported() {
@@ -125,4 +108,12 @@ mod tests {
         assert!(Rules::load("http://no.such.host.example.com/rules").is_err());
     }
 
+    #[test]
+    fn matches_and_exceptions() {
+        let r = Rules::load(FIXTURES.join("rules.yaml")).expect("load from file");
+        assert!(r.crit.is_match(b"0 Errors"));
+        assert!(!r.crit.is_match(b"0 errors"));
+        assert!(r.warn.is_match(b"some WARN foo"));
+        assert!(!r.warn.is_match(b"WARN: node[1234]: Exception in function"))
+    }
 }

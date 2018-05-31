@@ -13,19 +13,31 @@ pub struct Check {
     rules: Rules,
 }
 
+#[derive(Debug, Clone, Default)]
+struct Filtered<'a> {
+    crit: Vec<&'a [u8]>,
+    warn: Vec<&'a [u8]>,
+}
+
+impl<'a> Filtered<'a> {
+    fn new() -> Self {
+        Self::default()
+    }
+}
+
 impl Check {
-    fn filter<'a>(&self, journal: &'a [u8]) -> (Vec<&'a [u8]>, Vec<&'a [u8]>) {
-        let mut crit = Vec::new();
-        let mut warn = Vec::new();
-
-        for line in journal.split(|&c| c as char == '\n') {
-            if line.is_empty() {
-                continue;
-            }
-            self.rules.match_push(line, &mut crit, &mut warn);
-        }
-
-        (crit, warn)
+    fn filter<'a>(&self, journal: &'a [u8]) -> Filtered<'a> {
+        journal
+            .split(|&c| c as char == '\n')
+            .filter(|l| !l.is_empty())
+            .fold(Filtered::new(), |mut acc, line| {
+                if self.rules.crit.is_match(line) {
+                    acc.crit.push(line);
+                } else if self.rules.warn.is_match(line) {
+                    acc.warn.push(line);
+                };
+                acc
+            })
     }
 
     fn fmt_matches(&self, out: &mut Vec<u8>, title: &str, matches: &[&[u8]]) {
@@ -45,11 +57,11 @@ impl Check {
     }
 
     fn report(&mut self, out: &mut Vec<u8>, journal_lines: &[u8]) -> Result<String> {
-        let (crit, warn) = self.filter(journal_lines);
-        self.fmt_matches(out, "Critical", &crit);
-        self.fmt_matches(out, "Warning", &warn);
+        let res = self.filter(journal_lines);
+        self.fmt_matches(out, "Critical", &res.crit);
+        self.fmt_matches(out, "Warning", &res.warn);
 
-        match (crit.len(), warn.len()) {
+        match (res.crit.len(), res.warn.len()) {
             (0, 0) => Ok("no matches".into()),
             (0, w) => Err(ErrorKind::Warning(w).into()),
             (c, w) => Err(ErrorKind::Critical(c, w).into()),

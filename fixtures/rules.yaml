@@ -5,7 +5,7 @@ criticalpatterns:
 
 criticalexceptions:
       - 'timestamp:".*",level:"(error|warn)"'
-      - '0 failures 0 errors'
+      - '0 errors'
       - 'Disconnecting: authentication failures \[preauth\]'
 
 warningpatterns:
@@ -13,7 +13,7 @@ warningpatterns:
       - '[Ww]arn|WARN'
 
 warningexceptions:
-      - '0 failures 0 errors'
+      - '0 failures'
       - 'graylogctl'
       - 'node\[.*\]: Exception'
       - 'update-news\[.*\]'
