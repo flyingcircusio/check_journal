@@ -1,18 +1,10 @@
 use super::{Result, ResultExt};
-use regex::bytes::Regex;
+use regex::bytes::RegexSet;
 use reqwest;
 use serde_yaml;
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::Path;
-
-fn compile(rules: &[String], which: &str) -> Result<Vec<Regex>> {
-    rules
-        .iter()
-        .enumerate()
-        .map(|(i, r)| Regex::new(r).chain_err(|| format!("while loading {} rule {}", which, i + 1)))
-        .collect()
-}
 
 #[derive(Debug, Default, Deserialize)]
 pub struct RulesFile {
@@ -22,36 +14,56 @@ pub struct RulesFile {
     warningexceptions: Vec<String>,
 }
 
-#[derive(Debug, Default)]
-pub struct RegexSet {
-    matches: Vec<Regex>,
-    except: Vec<Regex>,
+#[derive(Debug)]
+pub struct RuleSet {
+    matches: RegexSet,
+    except: RegexSet,
 }
 
-impl RegexSet {
+impl RuleSet {
+    pub fn new(patterns: &[String], exceptions: &[String], title: &str) -> Result<Self> {
+        Ok(Self {
+            matches: RegexSet::new(patterns)
+                .chain_err(|| format!("Failed to load {} patterns", title))?,
+            except: RegexSet::new(exceptions)
+                .chain_err(|| format!("Failed to load {} exceptions", title))?,
+        })
+    }
+
     pub fn is_match(&self, line: &[u8]) -> bool {
-        self.matches.iter().any(|r| r.is_match(line))
-            && !self.except.iter().any(|r| r.is_match(line))
+        self.matches.is_match(line) && !self.except.is_match(line)
+    }
+}
+
+impl Default for RuleSet {
+    fn default() -> Self {
+        let empty: [&str; 0] = [];
+        Self {
+            matches: RegexSet::new(&empty).unwrap(),
+            except: RegexSet::new(&empty).unwrap(),
+        }
     }
 }
 
 #[derive(Debug, Default)]
 pub struct Rules {
-    pub crit: RegexSet,
-    pub warn: RegexSet,
+    pub crit: RuleSet,
+    pub warn: RuleSet,
 }
 
 impl Rules {
     fn try_from(source: &RulesFile) -> Result<Self> {
         Ok(Self {
-            crit: RegexSet {
-                matches: compile(&source.criticalpatterns, "critical patterns")?,
-                except: compile(&source.criticalexceptions, "critical exceptions")?,
-            },
-            warn: RegexSet {
-                matches: compile(&source.warningpatterns, "warning patterns")?,
-                except: compile(&source.warningexceptions, "warning exceptions")?,
-            },
+            crit: RuleSet::new(
+                &source.criticalpatterns,
+                &source.criticalexceptions,
+                "critical",
+            )?,
+            warn: RuleSet::new(
+                &source.warningpatterns,
+                &source.warningexceptions,
+                "warning",
+            )?,
         })
     }
 
@@ -84,11 +96,12 @@ mod test {
 
     #[test]
     fn parse_failure_should_be_reported() {
-        if let Err(e) = compile(
+        if let Err(e) = RuleSet::new(
             &["foo".to_owned(), "invalid (re".to_owned(), "bar".to_owned()][..],
+            &[],
             "crit",
         ) {
-            assert_eq!(e.description(), "while loading crit rule 2");
+            assert_eq!(format!("{}", e), "Failed to load crit patterns");
         } else {
             panic!("compile() did not return error");
         }

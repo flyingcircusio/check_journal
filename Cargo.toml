@@ -1,10 +1,10 @@
 [package]
 name = "check_journal"
-version = "0.1.0"
+version = "1.0.0"
 authors = ["Christian Kauhaus <kc@flyingcircus.io>"]
 
 [dependencies]
-clap = { version = "2.30", features = ["wrap_help"] }
+clap = { version = "2", features = ["wrap_help"] }
 derive-error-chain = "0.11"
 error-chain = "0.11"
 regex = "1"

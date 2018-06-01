@@ -47,6 +47,9 @@ pub enum ErrorKind {
     #[error_chain(foreign)]
     Reqwest(reqwest::Error),
 
+    #[error_chain(foreign)]
+    Regex(regex::Error),
+
     Msg(String),
 
     #[error_chain(custom)]
@@ -64,11 +67,6 @@ pub enum ErrorKind {
     #[error_chain(description = r#"|_| "unexpected journalctl exit""#)]
     #[error_chain(display = r#"|s| write!(f, "journalctl failed with exit code {:?}", s)"#)]
     Journal(ExitStatus),
-
-    #[error_chain(custom)]
-    #[error_chain(description = r#"|_| "regex error""#)]
-    #[error_chain(display = r#"|re| write!(f, "regex parse failure: {}", re)"#)]
-    Regex(i32),
 }
 
 fn output(res: Result<String>) -> i32 {
@@ -93,49 +91,30 @@ fn output(res: Result<String>) -> i32 {
 
 fn main() {
     let matches = app_from_crate!()
+        .arg(Arg::from_usage(
+            "<RULES> 'YAML with match patterns (file name or URL)'",
+        ))
         .arg(
-            Arg::with_name("rules")
-                .value_name("RULES")
-                .required(true)
-                .help("YAML logcheck rules, local file name or URL"),
+            Arg::from_usage("-j, --journalctl <PATH> 'Executable to call'")
+                .default_value("journalctl"),
+        )
+        // XXX not implemented yet
+        .arg(
+            Arg::from_usage("-t, --timeout <N> 'Aborts check execution after T seconds'")
+            .default_value("60"))
+        .arg(
+            Arg::from_usage(
+                "-s, --span <EXPR> 'Reads journal entries from the last EXPR (time suffixes \
+                accepted)'",
+            ).default_value("600s"),
         )
         .arg(
-            Arg::with_name("journalctl")
-                .long("journalctl")
-                .default_value("journalctl")
-                .help("Path to journalctl executable"),
+            Arg::from_usage("-l, --lines <N> 'Shows maximum N lines for critical/warning matches'")
+                .default_value("50"),
         )
         .arg(
-            Arg::with_name("timeout")
-                .short("t")
-                .long("timeout")
-                .value_name("T")
-                .default_value("60")
-                .help("Aborts check execution after T seconds"),
-        )
-        .arg(
-            Arg::with_name("span")
-                .short("s")
-                .long("span")
-                .value_name("EXPR")
-                .default_value("600s")
-                .help("Reads journal entries from the last EXPR (time suffixes accepted)"),
-        )
-        .arg(
-            Arg::with_name("lines")
-                .short("l")
-                .long("limit-lines")
-                .value_name("N")
-                .default_value("50")
-                .help("Shows maximum N lines for critical/warning matches"),
-        )
-        .arg(
-            Arg::with_name("bytes")
-                .short("b")
-                .long("limit-bytes")
-                .value_name("B")
-                .default_value("8192")
-                .help("Truncates output in total to B bytes"),
+            Arg::from_usage("-b, --bytes <B> 'Truncates output in total to B bytes'")
+                .default_value("8192"),
         )
         .get_matches();
 
