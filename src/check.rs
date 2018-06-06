@@ -18,7 +18,7 @@ impl<'a> Filtered<'a> {
 
 #[derive(Debug, Default)]
 pub struct Check {
-    timeout: f32,
+    timeout: u32,
     lines: usize,
     bytes: usize,
     journalctl: String,
@@ -95,6 +95,8 @@ impl Check {
     }
 
     pub fn run(&mut self, out: &mut Vec<u8>) -> Result<String> {
+        #[cfg(not(test))]
+        ::timeout::install(self.timeout);
         let since = format!("--since=-{}", self.span);
         // compromise between inaccurate counts and memory usage cap
         let lines = format!("--lines={}", 10 * self.lines);
@@ -118,7 +120,7 @@ impl Check {
 impl<'a> Check {
     pub fn try_from(m: &::clap::ArgMatches<'a>) -> Result<Self> {
         Ok(Self {
-            timeout: value_t!(m, "timeout", f32)?,
+            timeout: value_t!(m, "timeout", u32)?,
             lines: value_t!(m, "lines", usize)?,
             bytes: value_t!(m, "bytes", usize)?,
             journalctl: m.value_of("journalctl")

@@ -3,6 +3,7 @@ extern crate clap;
 #[macro_use]
 extern crate derive_error_chain;
 extern crate error_chain;
+extern crate nix;
 extern crate regex;
 extern crate subprocess;
 #[macro_use]
@@ -11,12 +12,13 @@ extern crate reqwest;
 extern crate serde;
 extern crate serde_yaml;
 
-#[cfg(test)]
 #[macro_use]
 extern crate lazy_static;
 
 mod check;
 mod rules;
+#[cfg(not(test))]
+mod timeout;
 
 #[cfg(test)]
 mod tests;
@@ -54,8 +56,10 @@ pub enum ErrorKind {
 
     #[error_chain(custom)]
     #[error_chain(description = r#"|_, _| "critical check result""#)]
-    #[error_chain(display = r#"|crit, warn|
-                  write!(f, "{} critical, {} warning line(s) found", crit, warn)"#)]
+    #[error_chain(
+        display = r#"|crit, warn|
+                  write!(f, "{} critical, {} warning line(s) found", crit, warn)"#
+    )]
     Critical(usize, usize),
 
     #[error_chain(custom)]
@@ -98,14 +102,14 @@ fn main() {
             Arg::from_usage("-j, --journalctl <PATH> 'Executable to call'")
                 .default_value("journalctl"),
         )
-        // XXX not implemented yet
         .arg(
             Arg::from_usage("-t, --timeout <N> 'Aborts check execution after T seconds'")
-            .default_value("60"))
+                .default_value("60"),
+        )
         .arg(
             Arg::from_usage(
                 "-s, --span <EXPR> 'Reads journal entries from the last EXPR (time suffixes \
-                accepted)'",
+                 accepted)'",
             ).default_value("600s"),
         )
         .arg(
@@ -113,7 +117,7 @@ fn main() {
                 .default_value("50"),
         )
         .arg(
-            Arg::from_usage("-b, --bytes <B> 'Truncates output in total to B bytes'")
+            Arg::from_usage("-b, --bytes <B> 'Truncates output to B bytes total'")
                 .default_value("8192"),
         )
         .get_matches();

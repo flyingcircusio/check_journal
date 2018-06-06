@@ -2,20 +2,20 @@
 name = "check_journal"
 version = "1.0.0"
 authors = ["Christian Kauhaus <kc@flyingcircus.io>"]
+description = "Nagios/Icinga compatible plugin to search `journalctl` output for matching lines."
 
 [dependencies]
 clap = { version = "2", features = ["wrap_help"] }
 derive-error-chain = "0.11"
 error-chain = "0.11"
+lazy_static = "1"
+nix = "0.11"
 regex = "1"
 reqwest = "0.8"
 serde = "1"
 serde_derive = "1"
 serde_yaml = "0.7"
 subprocess = "0.1"
-
-[dev-dependencies]
-lazy_static = "1"
 
 [profile.release]
 lto = true
