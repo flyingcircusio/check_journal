@@ -1,16 +1,20 @@
 use nix::libc;
-use std::sync::{Arc, Mutex};
 use nix::sys::signal::*;
 use nix::unistd::alarm;
-use std::process;
 use std::ops::{Deref, DerefMut};
+use std::process;
+use std::sync::{Arc, Mutex};
 
-lazy_static!{
+lazy_static! {
     static ref T: Arc<Mutex<u32>> = Arc::new(Mutex::new(0));
 }
 
 extern "C" fn hdl(_: libc::c_int) {
-    println!("{} UNKNOWN - timed out after {}s", crate_name!(), T.lock().unwrap().deref());
+    println!(
+        "{} UNKNOWN - timed out after {}s",
+        crate_name!(),
+        T.lock().unwrap().deref()
+    );
     process::exit(3);
 }
 

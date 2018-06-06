@@ -108,9 +108,9 @@ fn main() {
         )
         .arg(
             Arg::from_usage(
-                "-s, --span <EXPR> 'Reads journal entries from the last EXPR (time suffixes \
-                 accepted)'",
-            ).default_value("600s"),
+                "-s, --span <TIMESPEC> 'Reads journal entries from the last TIMESPEC (time \
+                 suffixes accepted)'",
+            ).default_value("601s"),
         )
         .arg(
             Arg::from_usage("-l, --lines <N> 'Shows maximum N lines for critical/warning matches'")

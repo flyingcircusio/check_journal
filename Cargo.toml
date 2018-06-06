@@ -2,7 +2,11 @@
 name = "check_journal"
 version = "1.0.0"
 authors = ["Christian Kauhaus <kc@flyingcircus.io>"]
-description = "Nagios/Icinga compatible plugin to search `journalctl` output for matching lines."
+description = "Nagios/Icinga compatible plugin to search `journalctl` output for matching lines"
+readme = "README.md"
+repository = "https://github.com/flyingcircusio/check_journal"
+keywords = ["monitoring", "journal"]
+license = "BSD-3-Clause"
 
 [dependencies]
 clap = { version = "2", features = ["wrap_help"] }

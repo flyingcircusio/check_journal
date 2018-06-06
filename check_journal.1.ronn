@@ -1,0 +1,116 @@
+check_journal -- Nagios/Icinga compatible plugin to search `journalctl` output
+=============================================================================
+
+## SYNOPSIS
+
+`check_journal` [<OPTIONS>] <rules.yaml>
+
+## DESCRIPTION
+
+`check_journal` calls `journalctl` and searches its output for lines matching
+critical or warning patterns. Match rules are loaded from a YAML file. Rules
+consist of a set of patterns and a set of exceptions. A line is a
+match if any pattern but no exception applies. `check_journal` gives an
+overall status (**CRITICAL**, **WARNING**, **OK**, or **UNKNOWN**) and reports a
+match count in `journalctl` output for both critical and warning rules.
+
+`check_journal` reports its findings conforming to Nagios/Icinga plugin
+development guidelines, making it suitable for a wide range of monitoring
+systems.
+
+
+## OPTIONS
+
+* `-s`, `--span` <TIMESPEC>:
+    Instructs `journalctl` to emit only records logged during the last TIMESPEC.
+    See systemd.time(7) pfor time span syntax. Examples: 600s, 10m.
+
+* `-l`, `--lines` <N>:
+    Restricts reporting of critical and warning matches to N lines each.
+
+* `-b`, `--bytes` <B>:
+    Limits total match reporting to B bytes, regardless of match type. This
+    option can be used to prevent problems with downstream monitoring caused by
+    overlong lines or otherwise badly formatted output. Specify **0** to remove
+    the limit.
+
+* `-t`, `--timeout` <N>:
+    Aborts check execution after N seconds. Used to prevent `check_journal` from
+    overly long `journalctl` run times.
+
+* `-j`, `--journalctl` <PATH>:
+    Specifies the journalctl executable.
+
+
+## ENVIRONMENT
+
+The environment is passed to the underlying `journalctl` call and may affects
+its behaviour.
+
+
+## FILES ##
+
+The **rules file** is a YAML document which has four keys on the top level:
+
+* `criticalpatterns`
+* `criticalexceptions`
+* `warningpatterns`
+* `warningexceptions`
+
+Each key is followed by a list of extended regular expressions. See EXAMPLE
+below.
+
+
+## NOTES
+
+Report bugs and submit feature requests at
+[https://github.com/flyingcircusio/check_journal](https://github.com/flyingcircusio/check_journal).
+
+## EXAMPLE
+
+### Rules file
+
+```
+criticalpatterns:
+      - '[Aa]bort|ABORT'
+      - '[Ee]rror|ERROR'
+
+criticalexceptions:
+      - 'timestamp:".*",level:"(error|warn)"'
+      - '0 errors'
+
+warningpatterns:
+      - '[Ff]ail|FAIL'
+      - '[Ww]arn|WARN'
+
+warningexceptions:
+      - '0 failures'
+      - 'graylogctl'
+      - 'node\[.*\]: Exception'
+```
+
+### Output
+
+```
+check_journal CRITICAL - 1 critical, 0 warning line(s) found
+
+*** Critical hits ***
+
+Jun 06 11:47:22 host user[3966]: error
+```
+
+
+## EXIT STATUS
+
+0 - OK - no matches found
+
+1 - WARNING - warning matches found but no critical matches found
+
+2 - CRITICAL - critical matches found
+
+3 - UNKNOWN - an error occurred
+
+
+## SEE ALSO
+
+journalctl(1), systemd.time(7), regex(7)

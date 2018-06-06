@@ -2,6 +2,8 @@
 
 Nagios/Icinga compatible plugin to search `journalctl` output for matching lines.
 
+## Usage
+
 check_journal takes a YAML document with regular expressions for matches and exceptions. Example:
 
 ```
@@ -30,3 +32,12 @@ procedure is repeated for WARNING.
 `journalctl` is invoked with a `--since` parameter (time span is configurable)
 so that log lines are not reported multiple times for recurrent runs of
 check_journal. See the man page for more options.
+
+## Author
+
+The primary author is Christian Kauhaus <kc@flyingcircus.io>.
+
+## License
+
+This program is distributed under the terms of the [BSD 3-Clause Revised
+License](https://opensource.org/licenses/BSD-3-Clause).
