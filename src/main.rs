@@ -114,12 +114,14 @@ fn main() {
         )
         .arg(
             Arg::from_usage("-l, --lines <N> 'Shows maximum N lines for critical/warning matches'")
-                .default_value("50"),
+                .default_value("50")
+                .alias("limit")
         )
         .arg(
             Arg::from_usage("-b, --bytes <B> 'Truncates output to B bytes total'")
                 .default_value("8192"),
         )
+        .arg(Arg::from_usage("-v, --verbose '(ignored)'").hidden(true))
         .get_matches();
 
     let mut app = match check::Check::try_from(&matches) {

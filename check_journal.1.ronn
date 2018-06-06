@@ -60,6 +60,9 @@ The **rules file** is a YAML document which has four keys on the top level:
 Each key is followed by a list of extended regular expressions. See EXAMPLE
 below.
 
+The rules file can specified as URL in addition to a local file name. In this
+case, the resource is retrieved from the network first.
+
 
 ## NOTES
 
