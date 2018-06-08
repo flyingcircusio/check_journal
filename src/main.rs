@@ -117,7 +117,9 @@ fn main() {
                 .default_value("8192"),
         )
         .arg(Arg::from_usage("-v, --verbose '(ignored)'").hidden(true))
-        .arg(Arg::from_usage("<RULES_YAML> 'match patterns (file name or URL)'").last(true))
+        .arg(Arg::from_usage(
+            "<RULES_YAML> 'match patterns (file name or URL)'",
+        ))
         .get_matches();
 
     let mut app = match check::Check::try_from(&matches) {

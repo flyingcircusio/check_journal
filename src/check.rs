@@ -128,7 +128,7 @@ impl<'a> Check {
                 .expect("missing default_value")
                 .into(),
             span: m.value_of("span").expect("missing default_value").into(),
-            rules: Rules::load(m.value_of("RULES").expect("missing option"))?,
+            rules: Rules::load(m.value_of("RULES_YAML").expect("missing option RULES_YAML"))?,
         })
     }
 }
