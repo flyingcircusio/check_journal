@@ -3,16 +3,18 @@ check_journal -- Nagios/Icinga compatible plugin to search `journalctl` output
 
 ## SYNOPSIS
 
-`check_journal` [<OPTIONS>] <rules.yaml>
+`check_journal` [<OPTIONS>] <RULES_YAML>
 
 ## DESCRIPTION
 
 `check_journal` calls `journalctl` and searches its output for lines matching
-critical or warning patterns. Match rules are loaded from a YAML file. Rules
-consist of a set of patterns and a set of exceptions. A line is a
-match if any pattern but no exception applies. `check_journal` gives an
-overall status (**CRITICAL**, **WARNING**, **OK**, or **UNKNOWN**) and reports a
-match count in `journalctl` output for both critical and warning rules.
+critical or warning patterns. Match rules are loaded from a YAML file. If an URL
+is given instead of a local file name, the resource is retrieved first.
+
+Rules consist of a set of patterns and a set of exceptions. A line is a match if
+any pattern but no exception applies. `check_journal` gives an overall status
+(**CRITICAL**, **WARNING**, **OK**, or **UNKNOWN**) and reports a match count in
+`journalctl` output for both critical and warning rules.
 
 `check_journal` reports its findings conforming to Nagios/Icinga plugin
 development guidelines, making it suitable for a wide range of monitoring
@@ -34,8 +36,8 @@ systems.
     overlong lines or otherwise badly formatted output. Set to 0 to remove
     the limit.
 
-* `-t`, `--timeout` <N>:
-    Aborts check execution after N seconds. Used to prevent `check_journal` from
+* `-t`, `--timeout` <T>:
+    Aborts check execution after T seconds. Used to prevent `check_journal` from
     overly long `journalctl` run times. Set to 0 to disable.
 
 * `-j`, `--journalctl` <PATH>:
@@ -50,7 +52,7 @@ its behaviour.
 
 ## FILES ##
 
-The **rules file** is a YAML document which has four keys on the top level:
+<RULES_YAML> is a YAML document which has four keys on the top level:
 
 * `criticalpatterns`
 * `criticalexceptions`
@@ -59,9 +61,6 @@ The **rules file** is a YAML document which has four keys on the top level:
 
 Each key is followed by a list of extended regular expressions. See EXAMPLE
 below.
-
-The rules file can specified as URL in addition to a local file name. In this
-case, the resource is retrieved from the network first.
 
 
 ## NOTES

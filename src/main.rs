@@ -93,15 +93,12 @@ fn output(res: Result<String>) -> i32 {
 
 fn main() {
     let matches = app_from_crate!()
-        .arg(Arg::from_usage(
-            "<RULES> 'YAML with match patterns (file name or URL)'",
-        ))
         .arg(
             Arg::from_usage("-j, --journalctl <PATH> 'Executable to call'")
                 .default_value("journalctl"),
         )
         .arg(
-            Arg::from_usage("-t, --timeout <N> 'Aborts check execution after T seconds'")
+            Arg::from_usage("-t, --timeout <T> 'Aborts check execution after T seconds'")
                 .default_value("60"),
         )
         .arg(
@@ -112,7 +109,7 @@ fn main() {
         )
         .arg(
             Arg::from_usage("-l, --lines <N> 'Shows maximum N lines for critical/warning matches'")
-                .default_value("50")
+                .default_value("30")
                 .alias("limit"),
         )
         .arg(
@@ -120,6 +117,7 @@ fn main() {
                 .default_value("8192"),
         )
         .arg(Arg::from_usage("-v, --verbose '(ignored)'").hidden(true))
+        .arg(Arg::from_usage("<RULES_YAML> 'match patterns (file name or URL)'").last(true))
         .get_matches();
 
     let mut app = match check::Check::try_from(&matches) {
