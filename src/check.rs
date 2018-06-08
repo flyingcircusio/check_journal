@@ -1,8 +1,8 @@
-use super::{ErrorKind, Result, ResultExt};
 use rules::Rules;
 use std::io::Write;
 use subprocess::ExitStatus::Exited;
 use subprocess::{ExitStatus, Popen, PopenConfig, Redirection};
+use {ErrorKind, Result, ResultExt};
 
 #[derive(Debug, Clone, Default)]
 struct Filtered<'a> {
@@ -95,8 +95,9 @@ impl Check {
     }
 
     pub fn run(&mut self, out: &mut Vec<u8>) -> Result<String> {
-        #[cfg(not(test))]
-        ::timeout::install(self.timeout);
+        if self.timeout > 0 {
+            ::timeout::install(self.timeout)?;
+        }
         let since = format!("--since=-{}", self.span);
         // compromise between inaccurate counts and memory usage cap
         let lines = format!("--lines={}", 10 * self.lines);

@@ -1,30 +1,31 @@
+use lazycell::AtomicLazyCell;
 use nix::libc;
 use nix::sys::signal::*;
 use nix::unistd::alarm;
-use std::ops::{Deref, DerefMut};
 use std::process;
-use std::sync::{Arc, Mutex};
+use {Result, ResultExt};
 
 lazy_static! {
-    static ref T: Arc<Mutex<u32>> = Arc::new(Mutex::new(0));
+    static ref T: AtomicLazyCell<u32> = AtomicLazyCell::new();
 }
 
 extern "C" fn hdl(_: libc::c_int) {
     println!(
         "{} UNKNOWN - timed out after {}s",
         crate_name!(),
-        T.lock().unwrap().deref()
+        T.get().unwrap_or_default()
     );
     process::exit(3);
 }
 
-pub fn install(timeout: u32) {
-    *T.lock().unwrap().deref_mut() = timeout;
+pub fn install(timeout: u32) -> Result<()> {
+    T.fill(timeout).expect("BUG: trying to set up alarm twice");
     unsafe {
         sigaction(
             Signal::SIGALRM,
             &SigAction::new(SigHandler::Handler(hdl), SaFlags::empty(), SigSet::empty()),
         )
-    }.expect("failed to set signal handler");
+    }.chain_err(|| "failed to set signal handler")?;
     alarm::set(timeout as libc::c_uint);
+    Ok(())
 }

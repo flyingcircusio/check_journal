@@ -31,12 +31,12 @@ systems.
 * `-b`, `--bytes` <B>:
     Limits total match reporting to B bytes, regardless of match type. This
     option can be used to prevent problems with downstream monitoring caused by
-    overlong lines or otherwise badly formatted output. Specify **0** to remove
+    overlong lines or otherwise badly formatted output. Set to 0 to remove
     the limit.
 
 * `-t`, `--timeout` <N>:
     Aborts check execution after N seconds. Used to prevent `check_journal` from
-    overly long `journalctl` run times.
+    overly long `journalctl` run times. Set to 0 to disable.
 
 * `-j`, `--journalctl` <PATH>:
     Specifies the journalctl executable.

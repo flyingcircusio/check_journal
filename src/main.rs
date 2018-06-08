@@ -11,17 +11,15 @@ extern crate serde_derive;
 extern crate reqwest;
 extern crate serde;
 extern crate serde_yaml;
-
 #[macro_use]
 extern crate lazy_static;
+extern crate lazycell;
 
 mod check;
 mod rules;
-#[cfg(not(test))]
-mod timeout;
-
 #[cfg(test)]
 mod tests;
+mod timeout;
 
 use clap::Arg;
 use std::error::Error as ErrorTrait;
@@ -115,7 +113,7 @@ fn main() {
         .arg(
             Arg::from_usage("-l, --lines <N> 'Shows maximum N lines for critical/warning matches'")
                 .default_value("50")
-                .alias("limit")
+                .alias("limit"),
         )
         .arg(
             Arg::from_usage("-b, --bytes <B> 'Truncates output to B bytes total'")
