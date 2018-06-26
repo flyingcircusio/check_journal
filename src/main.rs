@@ -5,10 +5,10 @@ extern crate derive_error_chain;
 extern crate error_chain;
 extern crate nix;
 extern crate regex;
+extern crate reqwest;
 extern crate subprocess;
 #[macro_use]
 extern crate serde_derive;
-extern crate reqwest;
 extern crate serde;
 extern crate serde_yaml;
 #[macro_use]
@@ -109,7 +109,7 @@ fn main() {
         )
         .arg(
             Arg::from_usage("-l, --lines <N> 'Shows maximum N lines for critical/warning matches'")
-                .default_value("30")
+                .default_value("25")
                 .alias("limit"),
         )
         .arg(

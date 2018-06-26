@@ -108,7 +108,7 @@ impl Check {
                 stdin: Redirection::Pipe,
                 stdout: Redirection::Pipe,
                 stderr: Redirection::Pipe,
-                ..Default::default()
+                ..PopenConfig::default()
             },
         ).chain_err(|| format!("failed to execute '{}'", self.journalctl))?;
         let (stdout, stderr) = p.communicate_bytes(Some(b""))?;
