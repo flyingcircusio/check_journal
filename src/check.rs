@@ -83,8 +83,7 @@ impl Check {
     ) -> Result<String> {
         match (exit, stdout, stderr) {
             (Exited(0...1), ref o, ref e) if o.is_empty() && e.is_empty() => Ok("no output".into()),
-            (Exited(0...1), ref o, ref e) if e.is_empty() => self.report(out, o),
-            (Exited(0), ref o, _) => self.report(out, o),
+            (Exited(0...1), ref o, _) if !o.is_empty() => self.report(out, o),
             (s, o, e) => {
                 writeln!(out, "\n*** stdout ***")?;
                 out.write_all(&o)?;
@@ -250,32 +249,31 @@ mod test {
     }
 
     #[test]
-    fn should_match_on_exit_status_0_or_1() {
+    fn should_match_on_exit_0_or_1() {
         let c = check_fac();
-        assert_eq!(
-            c.examine(&mut vec![], Exited(0), b"log line".to_vec(), vec![])
-                .unwrap(),
-            "no matches"
-        );
-        assert_eq!(
-            c.examine(&mut vec![], Exited(1), b"log line".to_vec(), vec![])
-                .unwrap(),
-            "no matches"
-        );
+        for code in 0..=1 {
+            assert_eq!(
+                c.examine(&mut vec![], Exited(code), b"log line".to_vec(), vec![])
+                    .unwrap(),
+                "no matches"
+            );
+        }
     }
 
     #[test]
-    fn should_disregard_stderr_on_exit_0() {
+    fn should_disregard_stderr_on_exit_0_1() {
         let c = check_fac();
-        assert_eq!(
-            c.examine(
-                &mut vec![],
-                Exited(0),
-                b"log line".to_vec(),
-                b"strange debug msg".to_vec()
-            ).unwrap(),
-            "no matches"
-        );
+        for code in 0..=1 {
+            assert_eq!(
+                c.examine(
+                    &mut vec![],
+                    Exited(code),
+                    b"log line".to_vec(),
+                    b"strange debug msg".to_vec()
+                ).unwrap(),
+                "no matches"
+            );
+        }
     }
 
     #[test]

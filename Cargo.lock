@@ -108,7 +108,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "check_journal"
-version = "1.0.4"
+version = "1.0.5"
 dependencies = [
  "clap 2.31.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "derive-error-chain 0.11.2 (registry+https://github.com/rust-lang/crates.io-index)",
