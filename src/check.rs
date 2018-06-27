@@ -83,7 +83,8 @@ impl Check {
     ) -> Result<String> {
         match (exit, stdout, stderr) {
             (Exited(0...1), ref o, ref e) if o.is_empty() && e.is_empty() => Ok("no output".into()),
-            (Exited(0...1), ref o, _) => self.report(out, o),
+            (Exited(0...1), ref o, ref e) if e.is_empty() => self.report(out, o),
+            (Exited(0), ref o, _) => self.report(out, o),
             (s, o, e) => {
                 writeln!(out, "\n*** stdout ***")?;
                 out.write_all(&o)?;
