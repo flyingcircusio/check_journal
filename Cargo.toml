@@ -1,6 +1,6 @@
 [package]
 name = "check_journal"
-version = "1.0.3"
+version = "1.0.4"
 authors = ["Christian Kauhaus <kc@flyingcircus.io>"]
 description = "Nagios/Icinga compatible plugin to search `journalctl` output for matching lines"
 readme = "README.md"

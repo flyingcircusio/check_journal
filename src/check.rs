@@ -83,7 +83,7 @@ impl Check {
     ) -> Result<String> {
         match (exit, stdout, stderr) {
             (Exited(0...1), ref o, ref e) if o.is_empty() && e.is_empty() => Ok("no output".into()),
-            (Exited(0...1), ref o, ref e) if e.is_empty() => self.report(out, o),
+            (Exited(0...1), ref o, _) => self.report(out, o),
             (s, o, e) => {
                 writeln!(out, "\n*** stdout ***")?;
                 out.write_all(&o)?;
@@ -264,14 +264,17 @@ mod test {
     }
 
     #[test]
-    fn should_fail_on_stderr_and_exit_status_0() {
+    fn should_disregard_stderr_on_exit_0() {
         let c = check_fac();
-        match c.examine(&mut vec![], Exited(0), vec![], b"error output".to_vec())
-            .unwrap_err()
-        {
-            Error(ErrorKind::Journal(Exited(0)), _) => (),
-            e => panic!("unexpected error {}", e),
-        }
+        assert_eq!(
+            c.examine(
+                &mut vec![],
+                Exited(0),
+                b"log line".to_vec(),
+                b"strange debug msg".to_vec()
+            ).unwrap(),
+            "no matches"
+        );
     }
 
     #[test]

@@ -1,3 +1,8 @@
+2018-06-27  Christian Kauhaus <kc@flyingcircus.io>
+
+	* Release 1.0.4
+	* Ignore stderr on exit status 0
+
 2018-06-26  Christian Kauhaus <kc@flyingcircus.io>
 
 	* Release 1.0.3
