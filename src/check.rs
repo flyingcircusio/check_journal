@@ -1,8 +1,10 @@
-use rules::Rules;
+use super::{Opt, Status};
+use crate::rules::Rules;
+
+use anyhow::{anyhow, Context, Result};
 use std::io::Write;
 use subprocess::ExitStatus::Exited;
-use subprocess::{ExitStatus, Popen, PopenConfig, Redirection};
-use {ErrorKind, Result, ResultExt};
+use subprocess::{Exec, ExitStatus, Redirection::*};
 
 #[derive(Debug, Clone, Default)]
 struct Filtered<'a> {
@@ -10,7 +12,7 @@ struct Filtered<'a> {
     warn: Vec<&'a [u8]>,
 }
 
-impl<'a> Filtered<'a> {
+impl Filtered<'_> {
     fn new() -> Self {
         Self::default()
     }
@@ -18,11 +20,7 @@ impl<'a> Filtered<'a> {
 
 #[derive(Debug, Default)]
 pub struct Check {
-    timeout: u32,
-    lines: usize,
-    bytes: usize,
-    journalctl: String,
-    span: String,
+    opt: Opt,
     rules: Rules,
 }
 
@@ -45,32 +43,32 @@ impl Check {
         if matches.is_empty() {
             return;
         }
-        let trunc = if matches.len() > self.lines {
+        let trunc = if matches.len() > self.opt.lines {
             " (truncated)"
         } else {
             ""
         };
         writeln!(out, "\n*** {} hits{} ***\n", title, trunc).ok();
-        matches.iter().take(self.lines).for_each(|m| {
+        matches.iter().take(self.opt.lines).for_each(|m| {
             out.extend_from_slice(m);
             out.push(b'\n');
         })
     }
 
-    fn report(&self, out: &mut Vec<u8>, journal_lines: &[u8]) -> Result<String> {
+    fn report(&self, out: &mut Vec<u8>, journal_lines: &[u8]) -> Status {
         let res = self.filter(journal_lines);
         self.fmt_matches(out, "Critical", &res.crit);
         self.fmt_matches(out, "Warning", &res.warn);
 
-        if self.bytes > 0 && out.len() > self.bytes {
-            out.truncate(self.bytes);
+        if self.opt.bytes > 0 && out.len() > self.opt.bytes {
+            out.truncate(self.opt.bytes);
             out.extend_from_slice(b"[...]\n")
         }
 
         match (res.crit.len(), res.warn.len()) {
-            (0, 0) => Ok("no matches".into()),
-            (0, w) => Err(ErrorKind::Warning(w).into()),
-            (c, w) => Err(ErrorKind::Critical(c, w).into()),
+            (0, 0) => Status::Ok("no matches".to_owned()),
+            (0, w) => Status::Warning(w),
+            (c, w) => Status::Critical(c, w),
         }
     }
 
@@ -80,64 +78,44 @@ impl Check {
         exit: ExitStatus,
         stdout: Vec<u8>,
         stderr: Vec<u8>,
-    ) -> Result<String> {
+    ) -> Result<Status> {
         match (exit, stdout, stderr) {
-            (Exited(0...1), ref o, ref e) if o.is_empty() && e.is_empty() => Ok("no output".into()),
-            (Exited(0...1), ref o, _) if !o.is_empty() => self.report(out, o),
+            (Exited(0..=1), ref o, ref e) if o.is_empty() && e.is_empty() => {
+                Ok(Status::Ok("no output".to_owned()))
+            }
+            (Exited(0..=1), ref o, _) if !o.is_empty() => Ok(self.report(out, o)),
             (s, o, e) => {
                 writeln!(out, "\n*** stdout ***")?;
                 out.write_all(&o)?;
                 writeln!(out, "\n*** stderr ***")?;
                 out.write_all(&e)?;
-                Err(ErrorKind::Journal(s).into())
+                Err(anyhow!("journalctl failed with {:?}", s))
             }
         }
     }
 
-    pub fn run(&mut self, out: &mut Vec<u8>) -> Result<String> {
-        if self.timeout > 0 {
-            ::timeout::install(self.timeout)?;
-        }
-        let since = format!("--since=-{}", self.span);
+    pub fn run(&mut self, out: &mut Vec<u8>) -> Result<Status> {
+        let since = format!("--since=-{}", self.opt.span);
         // compromise between inaccurate counts and memory usage cap
-        let lines = format!("--lines={}", 10 * self.lines);
-        let cmdline = &[&self.journalctl, "--no-pager", &since, &lines][..];
-        let mut p = Popen::create(
-            cmdline,
-            PopenConfig {
-                stdin: Redirection::Pipe,
-                stdout: Redirection::Pipe,
-                stderr: Redirection::Pipe,
-                ..PopenConfig::default()
-            },
-        ).chain_err(|| format!("failed to execute '{}'", self.journalctl))?;
-        let (stdout, stderr) = p.communicate_bytes(Some(b""))?;
-        let exit = p.wait()?;
-        // stdout/stderr is always some value b/o Redirection::Pipe
-        self.examine(out, exit, stdout.unwrap(), stderr.unwrap())
+        let lines = format!("--lines={}", 10 * self.opt.lines);
+        let c = Exec::cmd(&self.opt.journalctl)
+            .args(&["--no-pager", &since, &lines])
+            .stdout(Pipe)
+            .stderr(Pipe)
+            .capture()
+            .with_context(|| format!("failed to execute '{}'", self.opt.journalctl))?;
+        self.examine(out, c.exit_status, c.stdout, c.stderr)
     }
-}
 
-impl<'a> Check {
-    pub fn try_from(m: &::clap::ArgMatches<'a>) -> Result<Self> {
-        Ok(Self {
-            timeout: value_t!(m, "timeout", u32)?,
-            lines: value_t!(m, "lines", usize)?,
-            bytes: value_t!(m, "bytes", usize)?,
-            journalctl: m.value_of("journalctl")
-                .expect("missing default_value")
-                .into(),
-            span: m.value_of("span").expect("missing default_value").into(),
-            rules: Rules::load(m.value_of("RULES_YAML").expect("missing option RULES_YAML"))?,
-        })
+    pub fn new(opt: super::Opt) -> Result<Self> {
+        let rules = Rules::load(&opt.rules_yaml)?;
+        Ok(Self { opt, rules })
     }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use tests::FIXTURES;
-    use Error;
 
     fn stringify<'a>(res: Vec<&[u8]>) -> Vec<String> {
         res.iter()
@@ -148,9 +126,10 @@ mod test {
     /// `Check` instance with sensible defaults
     fn check_fac() -> Check {
         let mut c = Check::default();
-        c.rules = Rules::load(FIXTURES.join("rules.yaml")).expect("load from file");
-        c.lines = 10;
-        c.bytes = 4096;
+        c.rules = Rules::load(concat!(env!("CARGO_MANIFEST_DIR"), "/fixtures/rules.yaml"))
+            .expect("load from file");
+        c.opt.lines = 10;
+        c.opt.bytes = 4096;
         c
     }
 
@@ -193,7 +172,7 @@ mod test {
     #[test]
     fn fmt_matches_should_truncate_lines() {
         let mut c = check_fac();
-        c.lines = 1;
+        c.opt.lines = 1;
         let mut out = Vec::new();
         c.fmt_matches(&mut out, "test2", &[b"first match", b"second match"]);
         assert_eq!(
@@ -209,16 +188,16 @@ mod test {
         let c = check_fac();
         let mut out = Vec::new();
         assert_eq!(
-            c.report(&mut out, b"all fine").unwrap(),
-            "no matches".to_owned()
+            c.report(&mut out, b"all fine"),
+            Status::Ok("no matches".to_owned())
         );
-        match c.report(&mut out, b"error").unwrap_err() {
-            Error(ErrorKind::Critical(n, m), _) => assert_eq!((n, m), (1, 0)),
-            e => panic!("unexpected error {:?}", e),
+        match c.report(&mut out, b"error") {
+            Status::Critical(n, m) => assert_eq!((n, m), (1, 0)),
+            e => panic!("unexpected status {:?}", e),
         }
-        match c.report(&mut out, b"warning").unwrap_err() {
-            Error(ErrorKind::Warning(n), _) => assert_eq!(n, 1),
-            e => panic!("unexpected error {:?}", e),
+        match c.report(&mut out, b"warning") {
+            Status::Warning(n) => assert_eq!(n, 1),
+            e => panic!("unexpected status {:?}", e),
         }
         assert_eq!(
             String::from_utf8_lossy(&out),
@@ -229,10 +208,9 @@ mod test {
     #[test]
     fn report_should_truncate_output() {
         let mut c = check_fac();
-        c.bytes = 50;
+        c.opt.bytes = 50;
         let mut out = Vec::new();
-        c.report(&mut out, b"error line\nwarning line\n")
-            .unwrap_err();
+        c.report(&mut out, b"error line\nwarning line\n");
         assert_eq!(
             String::from_utf8_lossy(&out),
             "\n*** Critical hits ***\n\nerror line\n\n*** Warning hi[...]\n"
@@ -244,7 +222,7 @@ mod test {
         let c = check_fac();
         assert_eq!(
             c.examine(&mut vec![], Exited(0), vec![], vec![]).unwrap(),
-            "no output"
+            Status::Ok("no output".to_owned())
         );
     }
 
@@ -255,7 +233,7 @@ mod test {
             assert_eq!(
                 c.examine(&mut vec![], Exited(code), b"log line".to_vec(), vec![])
                     .unwrap(),
-                "no matches"
+                Status::Ok("no matches".to_owned())
             );
         }
     }
@@ -270,8 +248,9 @@ mod test {
                     Exited(code),
                     b"log line".to_vec(),
                     b"strange debug msg".to_vec()
-                ).unwrap(),
-                "no matches"
+                )
+                .unwrap(),
+                Status::Ok("no matches".to_owned())
             );
         }
     }
@@ -279,11 +258,11 @@ mod test {
     #[test]
     fn should_fail_on_exit_status() {
         let c = check_fac();
-        match c.examine(&mut vec![], Exited(3), vec![], vec![])
-            .unwrap_err()
-        {
-            Error(ErrorKind::Journal(Exited(3)), _) => (),
-            e => panic!("unexpected error {}", e),
-        }
+        assert_eq!(
+            c.examine(&mut vec![], Exited(3), vec![], vec![])
+                .unwrap_err()
+                .to_string(),
+            "journalctl failed with Exited(3)"
+        );
     }
 }

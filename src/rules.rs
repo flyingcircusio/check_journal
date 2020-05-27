@@ -1,20 +1,12 @@
-use super::{Result, ResultExt};
+use anyhow::{Context, Result};
 use regex::bytes::RegexSet;
-use reqwest;
-use serde_yaml;
+use reqwest::blocking::get;
+use serde::Deserialize;
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::Read;
 use std::path::Path;
 
-#[derive(Debug, Default, Deserialize)]
-pub struct RulesFile {
-    criticalpatterns: Vec<String>,
-    criticalexceptions: Vec<String>,
-    warningpatterns: Vec<String>,
-    warningexceptions: Vec<String>,
-}
-
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RuleSet {
     matches: RegexSet,
     except: RegexSet,
@@ -24,9 +16,9 @@ impl RuleSet {
     pub fn new(patterns: &[String], exceptions: &[String], title: &str) -> Result<Self> {
         Ok(Self {
             matches: RegexSet::new(patterns)
-                .chain_err(|| format!("Failed to load {} patterns", title))?,
+                .with_context(|| format!("Failed to load {} patterns", title))?,
             except: RegexSet::new(exceptions)
-                .chain_err(|| format!("Failed to load {} exceptions", title))?,
+                .with_context(|| format!("Failed to load {} exceptions", title))?,
         })
     }
 
@@ -45,6 +37,14 @@ impl Default for RuleSet {
     }
 }
 
+#[derive(Debug, Default, Deserialize)]
+struct RulesFile {
+    criticalpatterns: Vec<String>,
+    criticalexceptions: Vec<String>,
+    warningpatterns: Vec<String>,
+    warningexceptions: Vec<String>,
+}
+
 #[derive(Debug, Default)]
 pub struct Rules {
     pub crit: RuleSet,
@@ -52,7 +52,7 @@ pub struct Rules {
 }
 
 impl Rules {
-    fn try_from(source: &RulesFile) -> Result<Self> {
+    fn new(source: RulesFile) -> Result<Self> {
         Ok(Self {
             crit: RuleSet::new(
                 &source.criticalpatterns,
@@ -68,23 +68,24 @@ impl Rules {
     }
 
     fn parse<R: Read>(rdr: R) -> Result<Self> {
-        let r: RulesFile =
-            serde_yaml::from_reader(BufReader::new(rdr)).chain_err(|| "YAML parse error")?;
-        Self::try_from(&r)
+        let rulesfile = serde_yaml::from_reader(rdr)?;
+        Self::new(rulesfile)
     }
 
     pub fn load<P: AsRef<Path>>(source: P) -> Result<Self> {
         let source = source.as_ref();
-        let source_str = source.to_string_lossy();
-        if source_str.contains("://") {
-            let s: &str = source.to_str().ok_or("URL not valid UTF-8")?;
-            Self::parse(reqwest::get(s)
-                .chain_err(|| "download error")?
-                .error_for_status()
-                .chain_err(|| "HTTP error")?)
+        let s = source.to_string_lossy();
+        if s.contains("://") {
+            Self::parse(
+                get(&*s)?
+                    .error_for_status()
+                    .with_context(|| format!("Failed to retrieve remote rules {}", s))?,
+            )
         } else {
-            Self::parse(File::open(source)
-                .chain_err(|| format!("cannot open rules file '{}'", source.display()))?)
+            Self::parse(
+                File::open(&source)
+                    .with_context(|| format!("Cannot open rules file {:?}", source))?,
+            )
         }
     }
 }
@@ -92,7 +93,11 @@ impl Rules {
 #[cfg(test)]
 mod test {
     use super::*;
-    use tests::FIXTURES;
+
+    fn load_rules() -> Rules {
+        Rules::load(concat!(env!("CARGO_MANIFEST_DIR"), "/fixtures/rules.yaml"))
+            .expect("load fixtures/rules.yaml")
+    }
 
     #[test]
     fn parse_failure_should_be_reported() {
@@ -109,7 +114,7 @@ mod test {
 
     #[test]
     fn load_from_file() {
-        let r = Rules::load(FIXTURES.join("rules.yaml")).expect("load from file");
+        let r = load_rules();
         assert_eq!(r.crit.matches.len(), 2);
         assert_eq!(r.crit.except.len(), 2);
         assert_eq!(r.warn.matches.len(), 2);
@@ -123,7 +128,7 @@ mod test {
 
     #[test]
     fn matches_and_exceptions() {
-        let r = Rules::load(FIXTURES.join("rules.yaml")).expect("load from file");
+        let r = load_rules();
         assert!(r.crit.is_match(b"0 Errors"));
         assert!(!r.crit.is_match(b"0 errors"));
         assert!(r.warn.is_match(b"some WARN foo"));
