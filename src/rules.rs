@@ -1,6 +1,5 @@
-use anyhow::{Context, Result};
+use anyhow::{ensure, Context, Result};
 use regex::bytes::RegexSet;
-use reqwest::blocking::get;
 use serde::Deserialize;
 use std::fs::File;
 use std::io::Read;
@@ -76,11 +75,17 @@ impl Rules {
         let source = source.as_ref();
         let s = source.to_string_lossy();
         if s.contains("://") {
-            Self::parse(
-                get(&*s)?
-                    .error_for_status()
-                    .with_context(|| format!("Failed to retrieve remote rules {}", s))?,
-            )
+            let res = ureq::get(&*s)
+                .timeout_connect(30_000)
+                .timeout_read(300_000)
+                .call();
+            ensure!(
+                res.ok(),
+                "Failed to retrieve remote rules from {}: {}",
+                s,
+                res.status_line()
+            );
+            Self::parse(res.into_reader())
         } else {
             Self::parse(
                 File::open(&source)

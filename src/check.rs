@@ -1,20 +1,114 @@
-use super::{Opt, Status};
+use super::Opt;
 use crate::rules::Rules;
+use crate::statefile::Statefile;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use std::io::Write;
+use std::str;
 use subprocess::ExitStatus::Exited;
-use subprocess::{Exec, ExitStatus, Redirection::*};
+use subprocess::{Exec, ExitStatus, Redirection};
 
+/// Log lines grouped into critcal, warning and special after applying rule sets
 #[derive(Debug, Clone, Default)]
 struct Filtered<'a> {
     crit: Vec<&'a [u8]>,
     warn: Vec<&'a [u8]>,
+    cursor: Option<String>,
 }
 
-impl Filtered<'_> {
-    fn new() -> Self {
-        Self::default()
+impl<'a> Filtered<'a> {
+    fn collect(journal: &'a [u8], rules: &'_ Rules) -> Filtered<'a> {
+        journal
+            .split(|&c| c as char == '\n')
+            .filter(|l| !l.is_empty() && !l.starts_with(b"-- Logs begin "))
+            .fold(Default::default(), |mut acc, line| {
+                if line.starts_with(b"-- cursor: ") {
+                    // unwrap: we know that there is a ':'
+                    let s = line.split(|&c| c as char == ':').nth(1).unwrap();
+                    acc.cursor = str::from_utf8(s).ok().map(|s| s.trim().to_owned());
+                } else if rules.crit.is_match(line) {
+                    acc.crit.push(line);
+                } else if rules.warn.is_match(line) {
+                    acc.warn.push(line);
+                };
+                acc
+            })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Status {
+    Ok(String),
+    Critical(usize, usize),
+    Warning(usize),
+}
+
+#[derive(Debug)]
+pub struct Outcome {
+    pub status: Result<Status>,
+    pub message: Vec<u8>,
+    pub cursor: Option<String>,
+}
+
+impl Default for Outcome {
+    fn default() -> Self {
+        Self {
+            status: Ok(Status::Ok(String::new())),
+            message: vec![],
+            cursor: None,
+        }
+    }
+}
+
+impl Outcome {
+    fn push(mut self, title: &str, matches: &[&[u8]], max_lines: usize) -> Self {
+        if matches.is_empty() {
+            return self;
+        }
+        let trunc = match matches.len() {
+            n if n > max_lines => " (truncated)",
+            _ => "",
+        };
+        writeln!(self.message, "\n*** {} hits{} ***\n", title, trunc).ok();
+        for m in matches.iter().take(max_lines) {
+            self.message.extend_from_slice(m);
+            self.message.push(b'\n');
+        }
+        self
+    }
+
+    fn matched(journal: &[u8], rules: &Rules, max_lines: usize) -> Self {
+        let mut res = Self::default();
+        let filt = Filtered::collect(journal, rules);
+        res = res.push("critical", &filt.crit, max_lines);
+        res = res.push("warning", &filt.warn, max_lines);
+        res.status = Ok(match (filt.crit.len(), filt.warn.len()) {
+            (0, 0) => Status::Ok("no matches".to_owned()),
+            (0, w) => Status::Warning(w),
+            (c, w) => Status::Critical(c, w),
+        });
+        res.cursor = filt.cursor;
+        res
+    }
+
+    fn empty() -> Self {
+        Self {
+            status: Ok(Status::Ok("no output".to_owned())),
+            ..Default::default()
+        }
+    }
+
+    fn failed(exit: ExitStatus, stdout: &[u8], stderr: &[u8]) -> Self {
+        let mut msg = vec![];
+        writeln!(msg, "\n*** stdout ***").ok();
+        msg.write_all(stdout).ok();
+        writeln!(msg, "\n*** stderr ***").ok();
+        msg.write_all(stderr).ok();
+        Self {
+            status: Err(anyhow!("journalctl failed with {:?}", exit)),
+            message: msg,
+            cursor: None,
+        }
     }
 }
 
@@ -22,94 +116,66 @@ impl Filtered<'_> {
 pub struct Check {
     opt: Opt,
     rules: Rules,
+    statefile: Option<Statefile>,
 }
 
 impl Check {
-    fn filter<'a>(&self, journal: &'a [u8]) -> Filtered<'a> {
-        journal
-            .split(|&c| c as char == '\n')
-            .filter(|l| !l.is_empty())
-            .fold(Filtered::new(), |mut acc, line| {
-                if self.rules.crit.is_match(line) {
-                    acc.crit.push(line);
-                } else if self.rules.warn.is_match(line) {
-                    acc.warn.push(line);
-                };
-                acc
-            })
-    }
-
-    fn fmt_matches(&self, out: &mut Vec<u8>, title: &str, matches: &[&[u8]]) {
-        if matches.is_empty() {
-            return;
-        }
-        let trunc = if matches.len() > self.opt.lines {
-            " (truncated)"
-        } else {
-            ""
+    pub fn new(opt: super::Opt) -> Result<Self> {
+        let rules = Rules::load(&opt.rules_yaml)?;
+        let statefile = match &opt.statefile {
+            Some(f) => Some(Statefile::load(f)?),
+            None => None,
         };
-        writeln!(out, "\n*** {} hits{} ***\n", title, trunc).ok();
-        matches.iter().take(self.opt.lines).for_each(|m| {
-            out.extend_from_slice(m);
-            out.push(b'\n');
+        Ok(Self {
+            opt,
+            rules,
+            statefile,
         })
     }
 
-    fn report(&self, out: &mut Vec<u8>, journal_lines: &[u8]) -> Status {
-        let res = self.filter(journal_lines);
-        self.fmt_matches(out, "Critical", &res.crit);
-        self.fmt_matches(out, "Warning", &res.warn);
-
-        if self.opt.bytes > 0 && out.len() > self.opt.bytes {
-            out.truncate(self.opt.bytes);
-            out.extend_from_slice(b"[...]\n")
-        }
-
-        match (res.crit.len(), res.warn.len()) {
-            (0, 0) => Status::Ok("no matches".to_owned()),
-            (0, w) => Status::Warning(w),
-            (c, w) => Status::Critical(c, w),
-        }
-    }
-
-    fn examine(
-        &self,
-        out: &mut Vec<u8>,
-        exit: ExitStatus,
-        stdout: Vec<u8>,
-        stderr: Vec<u8>,
-    ) -> Result<Status> {
+    fn examine(&self, exit: ExitStatus, stdout: &[u8], stderr: &[u8]) -> Outcome {
         match (exit, stdout, stderr) {
-            (Exited(0..=1), ref o, ref e) if o.is_empty() && e.is_empty() => {
-                Ok(Status::Ok("no output".to_owned()))
+            (Exited(0..=1), o, e) if o.is_empty() && e.is_empty() => Outcome::empty(),
+            (Exited(0..=1), o, _) if !o.is_empty() => {
+                Outcome::matched(o, &self.rules, self.opt.lines)
             }
-            (Exited(0..=1), ref o, _) if !o.is_empty() => Ok(self.report(out, o)),
-            (s, o, e) => {
-                writeln!(out, "\n*** stdout ***")?;
-                out.write_all(&o)?;
-                writeln!(out, "\n*** stderr ***")?;
-                out.write_all(&e)?;
-                Err(anyhow!("journalctl failed with {:?}", s))
-            }
+            (x, o, e) => Outcome::failed(x, o, e),
         }
     }
 
-    pub fn run(&mut self, out: &mut Vec<u8>) -> Result<Status> {
-        let since = format!("--since=-{}", self.opt.span);
-        // compromise between inaccurate counts and memory usage cap
+    pub fn run(&mut self) -> Outcome {
+        // 10x lines is a compromise between inaccurate counts and memory usage cap
         let lines = format!("--lines={}", 10 * self.opt.lines);
-        let c = Exec::cmd(&self.opt.journalctl)
-            .args(&["--no-pager", &since, &lines])
-            .stdout(Pipe)
-            .stderr(Pipe)
+        let mut cmd = Exec::cmd(&self.opt.journalctl)
+            .args(&["--no-pager", "--show-cursor", &lines])
+            .stdout(Redirection::Pipe)
+            .stderr(Redirection::Pipe);
+        if let Some(s) = &self.statefile {
+            let last_cursor = s.get_cursor();
+            if !last_cursor.is_empty() {
+                cmd = cmd.arg(&format!("--after-cursor={}", last_cursor));
+            }
+        }
+        let mut out = cmd
             .capture()
-            .with_context(|| format!("failed to execute '{}'", self.opt.journalctl))?;
-        self.examine(out, c.exit_status, c.stdout, c.stderr)
-    }
-
-    pub fn new(opt: super::Opt) -> Result<Self> {
-        let rules = Rules::load(&opt.rules_yaml)?;
-        Ok(Self { opt, rules })
+            .map(|c| self.examine(c.exit_status, &c.stdout, &c.stderr))
+            .unwrap_or_else(|e| Outcome {
+                status: Err(anyhow!(
+                    "Failed to execute '{}': {}",
+                    self.opt.journalctl,
+                    e
+                )),
+                ..Default::default()
+            });
+        match (&mut self.statefile, &out.cursor) {
+            (Some(ref mut sf), Some(ref c)) => {
+                if let Err(e) = sf.update_cursor(c) {
+                    out.status = Err(e)
+                }
+            }
+            _ => (),
+        }
+        out
     }
 }
 
@@ -129,15 +195,15 @@ mod test {
         c.rules = Rules::load(concat!(env!("CARGO_MANIFEST_DIR"), "/fixtures/rules.yaml"))
             .expect("load from file");
         c.opt.lines = 10;
-        c.opt.bytes = 4096;
         c
     }
 
     #[test]
     fn filter_crit_warn() {
-        let c = check_fac();
         let j = include_bytes!("../fixtures/journal.txt");
-        let res = c.filter(&j[..]);
+        let rules = Rules::load(concat!(env!("CARGO_MANIFEST_DIR"), "/fixtures/rules.yaml"))
+            .expect("load rules");
+        let res = Filtered::collect(&j[..], &rules);
         assert_eq!(
             stringify(res.crit),
             vec![
@@ -156,12 +222,10 @@ mod test {
     }
 
     #[test]
-    fn fmt_matches_should_list_matches() {
-        let c = check_fac();
-        let mut out = Vec::new();
-        c.fmt_matches(&mut out, "test1", &[b"first match", b"second match"]);
+    fn outcome_should_list_matches() {
+        let out = Outcome::default().push("test1", &[b"first match", b"second match"], 10);
         assert_eq!(
-            String::from_utf8_lossy(&out),
+            String::from_utf8_lossy(&out.message),
             "\n*** test1 hits ***\n\
              \n\
              first match\n\
@@ -170,13 +234,10 @@ mod test {
     }
 
     #[test]
-    fn fmt_matches_should_truncate_lines() {
-        let mut c = check_fac();
-        c.opt.lines = 1;
-        let mut out = Vec::new();
-        c.fmt_matches(&mut out, "test2", &[b"first match", b"second match"]);
+    fn outcome_should_truncate_lines() {
+        let out = Outcome::default().push("test2", &[b"first match", b"second match"], 1);
         assert_eq!(
-            String::from_utf8_lossy(&out),
+            String::from_utf8_lossy(&out.message),
             "\n*** test2 hits (truncated) ***\n\
              \n\
              first match\n"
@@ -184,44 +245,21 @@ mod test {
     }
 
     #[test]
-    fn report_should_return_warn_crit_status() {
-        let c = check_fac();
-        let mut out = Vec::new();
-        assert_eq!(
-            c.report(&mut out, b"all fine"),
-            Status::Ok("no matches".to_owned())
-        );
-        match c.report(&mut out, b"error") {
-            Status::Critical(n, m) => assert_eq!((n, m), (1, 0)),
-            e => panic!("unexpected status {:?}", e),
-        }
-        match c.report(&mut out, b"warning") {
-            Status::Warning(n) => assert_eq!(n, 1),
-            e => panic!("unexpected status {:?}", e),
-        }
-        assert_eq!(
-            String::from_utf8_lossy(&out),
-            "\n*** Critical hits ***\n\nerror\n\n*** Warning hits ***\n\nwarning\n"
-        );
-    }
-
-    #[test]
-    fn report_should_truncate_output() {
-        let mut c = check_fac();
-        c.opt.bytes = 50;
-        let mut out = Vec::new();
-        c.report(&mut out, b"error line\nwarning line\n");
-        assert_eq!(
-            String::from_utf8_lossy(&out),
-            "\n*** Critical hits ***\n\nerror line\n\n*** Warning hi[...]\n"
-        )
+    fn should_return_warn_crit_status() {
+        let r = Rules::load(concat!(env!("CARGO_MANIFEST_DIR"), "/fixtures/rules.yaml"))
+            .expect("load rules");
+        let out = Outcome::matched(b"all fine", &r, 10);
+        assert_eq!(out.status.unwrap(), Status::Ok("no matches".to_owned()));
+        let out = Outcome::matched(b"error", &r, 10);
+        assert_eq!(out.status.unwrap(), Status::Critical(1, 0));
+        let out = Outcome::matched(b"warning", &r, 10);
+        assert_eq!(out.status.unwrap(), Status::Warning(1));
     }
 
     #[test]
     fn should_report_no_output() {
-        let c = check_fac();
         assert_eq!(
-            c.examine(&mut vec![], Exited(0), vec![], vec![]).unwrap(),
+            Outcome::empty().status.unwrap(),
             Status::Ok("no output".to_owned())
         );
     }
@@ -231,8 +269,7 @@ mod test {
         let c = check_fac();
         for code in 0..=1 {
             assert_eq!(
-                c.examine(&mut vec![], Exited(code), b"log line".to_vec(), vec![])
-                    .unwrap(),
+                c.examine(Exited(code), b"log line", b"").status.unwrap(),
                 Status::Ok("no matches".to_owned())
             );
         }
@@ -243,13 +280,9 @@ mod test {
         let c = check_fac();
         for code in 0..=1 {
             assert_eq!(
-                c.examine(
-                    &mut vec![],
-                    Exited(code),
-                    b"log line".to_vec(),
-                    b"strange debug msg".to_vec()
-                )
-                .unwrap(),
+                c.examine(Exited(code), b"log", b"strange debug msg")
+                    .status
+                    .unwrap(),
                 Status::Ok("no matches".to_owned())
             );
         }
@@ -259,10 +292,33 @@ mod test {
     fn should_fail_on_exit_status() {
         let c = check_fac();
         assert_eq!(
-            c.examine(&mut vec![], Exited(3), vec![], vec![])
+            c.examine(Exited(3), b"", b"")
+                .status
                 .unwrap_err()
                 .to_string(),
             "journalctl failed with Exited(3)"
+        );
+    }
+
+    #[test]
+    fn should_ignore_first_line() {
+        let c = check_fac();
+        assert_eq!(
+            c.examine(Exited(0), b"-- Logs begin with error", b"")
+                .status
+                .unwrap(),
+            Status::Ok("no matches".to_owned())
+        );
+    }
+
+    #[test]
+    fn shoud_recognize_cursor() {
+        let c = check_fac();
+        assert_eq!(
+            c.examine(Exited(0), b"\n\n-- cursor: s=7392c9bb7;i=87970dc\n", b"")
+                .cursor
+                .unwrap(),
+            "s=7392c9bb7;i=87970dc"
         );
     }
 }

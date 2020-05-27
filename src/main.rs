@@ -1,36 +1,14 @@
 mod check;
 mod rules;
+mod statefile;
 
-use crate::check::Check;
+use crate::check::{Check, Status};
 
-use anyhow::Result;
 use std::io::{stdout, Write};
 use std::path::PathBuf;
 use std::process;
 use structopt::clap::crate_name;
 use structopt::StructOpt;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Status {
-    Ok(String),
-    Critical(usize, usize),
-    Warning(usize),
-}
-
-fn output(res: Result<Status>) -> i32 {
-    let (keyword, summary, exitcode) = match res {
-        Ok(Status::Ok(summary)) => ("OK", summary, 0),
-        Ok(Status::Warning(n)) => ("WARNING", format!("{} warning line(s) found", n), 1),
-        Ok(Status::Critical(n, m)) => (
-            "CRITICAL",
-            format!("{} critical, {} warning line(s) found", n, m),
-            2,
-        ),
-        Err(e) => ("UNKNOWN", format!("{:?}", e), 3),
-    };
-    println!("{} {} - {}", crate_name!(), keyword, summary);
-    exitcode
-}
 
 #[derive(Debug, Default, StructOpt)]
 pub struct Opt {
@@ -38,14 +16,15 @@ pub struct Opt {
     #[structopt(short, long, default_value = "journalctl")]
     journalctl: String,
     /// Reads journal entries from the last TIMESPEC (time suffixes accepted)
-    #[structopt(short, long, default_value = "601s", value_name = "TIMESPEC")]
+    #[structopt(short, long, default_value = "600s", value_name = "TIMESPEC")]
     span: String,
     /// Shows maximum N lines for critical/warning matches
     #[structopt(short, long, alias = "limit", default_value = "25", value_name = "N")]
     lines: usize,
-    /// Truncates output to B bytes total
-    #[structopt(short, long, default_value = "8192", value_name = "B")]
-    bytes: usize,
+    /// Saves last log position for exact resume
+    #[structopt(short = "f", long, value_name = "PATH")]
+    statefile: Option<PathBuf>,
+    // ignored, retained for compatibility
     #[structopt(short, long, hidden = true)]
     verbose: bool,
     /// match patterns from file or URL
@@ -54,15 +33,37 @@ pub struct Opt {
 }
 
 fn main() {
-    let mut app = match Check::new(Opt::from_args()) {
+    let mut check = match Check::new(Opt::from_args()) {
         Ok(app) => app,
         Err(e) => {
-            output(Err(e));
+            println!("{} UNKNOWN - {:?}", crate_name!(), e);
             process::exit(3);
         }
     };
-    let mut out = Vec::with_capacity(8192);
-    let exit = output(app.run(&mut out));
-    stdout().write(&out).ok();
-    process::exit(exit)
+    let out = check.run();
+    let exitcode = match out.status {
+        Ok(Status::Ok(summary)) => {
+            println!("{} OK - {}", crate_name!(), summary);
+            0
+        }
+        Ok(Status::Warning(n)) => {
+            println!("{} WARNING - {} warning line(s) found", crate_name!(), n);
+            1
+        }
+        Ok(Status::Critical(c, w)) => {
+            println!(
+                "{} CRITICAL - {} critical, {} warning line(s) found",
+                crate_name!(),
+                c,
+                w
+            );
+            2
+        }
+        Err(e) => {
+            println!("{} UNKNOWN - {}", crate_name!(), e);
+            3
+        }
+    };
+    stdout().write(&out.message).ok();
+    process::exit(exitcode);
 }
