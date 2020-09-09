@@ -3,3 +3,4 @@
 **/*.rs.bk
 check_journal.1
 check_journal.1.html
+out/

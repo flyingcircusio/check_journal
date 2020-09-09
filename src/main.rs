@@ -1,6 +1,5 @@
 mod check;
 mod rules;
-mod statefile;
 
 use crate::check::{Check, Status};
 
@@ -16,7 +15,15 @@ pub struct Opt {
     #[structopt(short, long, default_value = "journalctl")]
     journalctl: String,
     /// Reads journal entries from the last TIMESPEC (time suffixes accepted)
-    #[structopt(short, long, default_value = "600s", value_name = "TIMESPEC")]
+    ///
+    /// This option applies only if no previous position could be read from the state file
+    #[structopt(
+        short,
+        long,
+        alias = "since",
+        default_value = "600s",
+        value_name = "TIMESPEC"
+    )]
     span: String,
     /// Shows maximum N lines for critical/warning matches
     #[structopt(short, long, alias = "limit", default_value = "25", value_name = "N")]
@@ -27,7 +34,10 @@ pub struct Opt {
     // ignored, retained for compatibility
     #[structopt(short, long, hidden = true)]
     verbose: bool,
-    /// match patterns from file or URL
+    /// Match patterns from file or URL
+    ///
+    /// In case of an URL, it will be downloaded automatically on each run. On download errors,
+    /// this plugin will exit with an UNKNOWN state.
     #[structopt(parse(from_os_str), value_name = "RULES_YAML")]
     rules_yaml: PathBuf,
 }

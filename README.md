@@ -33,6 +33,20 @@ procedure is repeated for WARNING.
 so that log lines are not reported multiple times for recurrent runs of
 check_journal. See the man page for more options.
 
+## Building
+
+Standard Rust build procedures apply. Basicall, invoke
+
+> cargo build --release
+
+to obtain a binary. A Makefile is included for convenience which also builds the
+manpage.
+
+Build requirements:
+
+* *Rust* >= 1.41
+* *ronn* for compiling the man page
+
 ## Author
 
 The primary author is Christian Kauhaus <kc@flyingcircus.io>.

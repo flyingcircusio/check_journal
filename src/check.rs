@@ -1,8 +1,8 @@
 use super::Opt;
 use crate::rules::Rules;
-use crate::statefile::Statefile;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Error, Result};
+use std::fs::File;
 use std::io::Write;
 use std::str;
 use subprocess::ExitStatus::Exited;
@@ -13,7 +13,6 @@ use subprocess::{Exec, ExitStatus, Redirection};
 struct Filtered<'a> {
     crit: Vec<&'a [u8]>,
     warn: Vec<&'a [u8]>,
-    cursor: Option<String>,
 }
 
 impl<'a> Filtered<'a> {
@@ -22,11 +21,7 @@ impl<'a> Filtered<'a> {
             .split(|&c| c as char == '\n')
             .filter(|l| !l.is_empty() && !l.starts_with(b"-- Logs begin "))
             .fold(Default::default(), |mut acc, line| {
-                if line.starts_with(b"-- cursor: ") {
-                    // unwrap: we know that there is a ':'
-                    let s = line.split(|&c| c as char == ':').nth(1).unwrap();
-                    acc.cursor = str::from_utf8(s).ok().map(|s| s.trim().to_owned());
-                } else if rules.crit.is_match(line) {
+                if rules.crit.is_match(line) {
                     acc.crit.push(line);
                 } else if rules.warn.is_match(line) {
                     acc.warn.push(line);
@@ -47,7 +42,6 @@ pub enum Status {
 pub struct Outcome {
     pub status: Result<Status>,
     pub message: Vec<u8>,
-    pub cursor: Option<String>,
 }
 
 impl Default for Outcome {
@@ -55,7 +49,6 @@ impl Default for Outcome {
         Self {
             status: Ok(Status::Ok(String::new())),
             message: vec![],
-            cursor: None,
         }
     }
 }
@@ -87,7 +80,6 @@ impl Outcome {
             (0, w) => Status::Warning(w),
             (c, w) => Status::Critical(c, w),
         });
-        res.cursor = filt.cursor;
         res
     }
 
@@ -107,7 +99,13 @@ impl Outcome {
         Self {
             status: Err(anyhow!("journalctl failed with {:?}", exit)),
             message: msg,
-            cursor: None,
+        }
+    }
+
+    fn error(e: Error) -> Self {
+        Outcome {
+            status: Err(e),
+            ..Self::default()
         }
     }
 }
@@ -116,21 +114,12 @@ impl Outcome {
 pub struct Check {
     opt: Opt,
     rules: Rules,
-    statefile: Option<Statefile>,
 }
 
 impl Check {
     pub fn new(opt: super::Opt) -> Result<Self> {
         let rules = Rules::load(&opt.rules_yaml)?;
-        let statefile = match &opt.statefile {
-            Some(f) => Some(Statefile::load(f)?),
-            None => None,
-        };
-        Ok(Self {
-            opt,
-            rules,
-            statefile,
-        })
+        Ok(Self { opt, rules })
     }
 
     fn examine(&self, exit: ExitStatus, stdout: &[u8], stderr: &[u8]) -> Outcome {
@@ -144,38 +133,35 @@ impl Check {
     }
 
     pub fn run(&mut self) -> Outcome {
-        // 10x lines is a compromise between inaccurate counts and memory usage cap
-        let lines = format!("--lines={}", 10 * self.opt.lines);
         let mut cmd = Exec::cmd(&self.opt.journalctl)
-            .args(&["--no-pager", "--show-cursor", &lines])
+            .args(&["--no-pager"])
+            // 10x lines is a compromise between inaccurate counts and memory usage cap
+            .arg(&format!("--lines={}", 10 * self.opt.lines))
+            .arg(&format!("--since=-{}", self.opt.span))
             .stdout(Redirection::Pipe)
             .stderr(Redirection::Pipe);
-        if let Some(s) = &self.statefile {
-            let last_cursor = s.get_cursor();
-            if !last_cursor.is_empty() {
-                cmd = cmd.arg(&format!("--after-cursor={}", last_cursor));
-            }
+        if let Some(sf) = &self.opt.statefile {
+            cmd = cmd.arg(&format!("--cursor-file={}", sf.display()));
         }
-        let mut out = cmd
-            .capture()
-            .map(|c| self.examine(c.exit_status, &c.stdout, &c.stderr))
-            .unwrap_or_else(|e| Outcome {
-                status: Err(anyhow!(
-                    "Failed to execute '{}': {}",
-                    self.opt.journalctl,
-                    e
-                )),
-                ..Default::default()
-            });
-        match (&mut self.statefile, &out.cursor) {
-            (Some(ref mut sf), Some(ref c)) => {
-                if let Err(e) = sf.update_cursor(c) {
-                    out.status = Err(e)
-                }
+        let mut cap = cmd.clone().capture();
+        match (&self.opt.statefile, &cap) {
+            (Some(sf), Ok(res)) if res.stderr_str().contains("Failed to seek to cursor") => {
+                // This is probably caused by on old-style (pre-1.1.2) status file.
+                // Truncate the status file and try again.
+                cap = File::create(sf)
+                    .map_err(|e| e.into())
+                    .and_then(|_| cmd.capture());
             }
             _ => (),
         }
-        out
+        cap.map(|c| self.examine(c.exit_status, &c.stdout, &c.stderr))
+            .unwrap_or_else(|e| {
+                Outcome::error(anyhow!(
+                    "Failed to execute '{}': {}",
+                    self.opt.journalctl,
+                    e
+                ))
+            })
     }
 }
 
@@ -308,17 +294,6 @@ mod test {
                 .status
                 .unwrap(),
             Status::Ok("no matches".to_owned())
-        );
-    }
-
-    #[test]
-    fn shoud_recognize_cursor() {
-        let c = check_fac();
-        assert_eq!(
-            c.examine(Exited(0), b"\n\n-- cursor: s=7392c9bb7;i=87970dc\n", b"")
-                .cursor
-                .unwrap(),
-            "s=7392c9bb7;i=87970dc"
         );
     }
 }
