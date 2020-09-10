@@ -2,54 +2,77 @@
 
 Nagios/Icinga compatible plugin to search `journalctl` output for matching lines.
 
+
 ## Usage
 
-check_journal takes a YAML document with regular expressions for matches and exceptions. Example:
+check_journal takes a YAML document with regular expressions for matches and
+exceptions. Example:
 
 ```
 criticalpatterns:
-      - '[Aa]bort|ABORT'
-      - '[Ee]rror|ERROR'
+  - '[Aa]bort|ABORT'
+  - '[Ee]rror|ERROR'
 
 criticalexceptions:
-      - 'timestamp:".*",level:"(error|warn)"'
-      - '0 errors'
+  - 'timestamp:".*",level:"(error|warn)"'
+  - '0 errors'
 
 warningpatterns:
-      - '[Ff]ail|FAIL'
-      - '[Ww]arn|WARN'
+  - '[Ff]ail|FAIL'
+  - '[Ww]arn|WARN'
 
 warningexceptions:
-      - '0 failures'
-      - 'graylogctl'
-      - 'node\[.*\]: Exception'
+  - '0 failures'
+  - 'graylogctl'
+  - 'node\[.*\]: Exception'
 ```
 
-check_journal reports a CRITICAL result if any one of `criticalpatterns` and no
-one of `criticalexceptions` matches. If there is not critical match, the same
+check_journal reports a CRITICAL result if any one of `criticalpatterns` and
+none of `criticalexceptions` matches. If there is not critical match, the same
 procedure is repeated for WARNING.
 
-`journalctl` is invoked with a `--since` parameter (time span is configurable)
-so that log lines are not reported multiple times for recurrent runs of
-check_journal. See the man page for more options.
+It is stongly recommended to pass a state file with the `-f` option. The state
+file helps check_journal to resume exactly where it stopped on the last run so
+that no log line is reported twice.
 
-## Building
 
-Standard Rust build procedures apply. Basicall, invoke
+## Installation
 
-> cargo build --release
+Standard Rust build procedures apply. Basically, invoke
+```
+cargo build --release
+```
+to obtain a binary.
 
-to obtain a binary. A Makefile is included for convenience which also builds the
-manpage.
+A Makefile is included which also builds the manpage. To compile and install
+under `/usr/local`, invoke
+```
+make install PREFIX=/usr/local
+```
 
 Build requirements:
 
-* *Rust* >= 1.41
+* *Rust* >= 1.40
 * *ronn* for compiling the man page
+
+
+## Journal permissions
+
+The plugin, which is usually running under the *nagios* user, must be able to
+access the journal. The recommended way to achieve this is:
+
+1. Grant members of the *adm* group access to the journal:
+      `setfacl -Rnm g:adm:rx,d:g:adm:rx /var/log/journal` -- see
+      systemd-journald.service(8) for details. Some distributions already have
+      that ACL set by default.
+
+2. Add the *nagios* user to the *adm* group.
+
 
 ## Author
 
-The primary author is Christian Kauhaus <kc@flyingcircus.io>.
+The primary author is [Christian Kauhaus](mailto:kc@flyingcircus.io).
+
 
 ## License
 
