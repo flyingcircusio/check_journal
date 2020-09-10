@@ -55,6 +55,28 @@ Build requirements:
 * *Rust* >= 1.40
 * *ronn* for compiling the man page
 
+## Packaging
+
+The plugin can be released as a snap package by running
+```bash
+snapcraft clean
+snapcraft
+```
+
+#### Installing the snap
+Once released, this will download the snap from the snapstore and install
+on the machine.
+```bash
+snap install check-journal
+```
+
+#### Running the snap
+```bash
+check-journal
+# -- or -- #
+snap run check-journal
+```
+
 
 ## Journal permissions
 
