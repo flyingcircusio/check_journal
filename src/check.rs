@@ -1,3 +1,5 @@
+//! Check execution and reporting
+
 use super::Opt;
 use crate::rules::Rules;
 
@@ -31,13 +33,18 @@ impl<'a> Filtered<'a> {
     }
 }
 
+/// Return status according to Nagios guidelines.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Status {
+    /// Success with general message
     Ok(String),
-    Critical(usize, usize),
+    /// Line counts of messages matching warning patterns
     Warning(usize),
+    /// Line counts of messages matching critical and warning patterns
+    Critical(usize, usize),
 }
 
+/// Overall status and collection of messages which match rule patterns.
 #[derive(Debug)]
 pub struct Outcome {
     pub status: Result<Status>,
@@ -110,6 +117,7 @@ impl Outcome {
     }
 }
 
+/// Main data structure which controls check execution. Contains program options and rule sets.
 #[derive(Debug, Default)]
 pub struct Check {
     opt: Opt,
@@ -117,6 +125,7 @@ pub struct Check {
 }
 
 impl Check {
+    /// Creates instance from program options. Loads specified rules file.
     pub fn new(opt: super::Opt) -> Result<Self> {
         let rules = Rules::load(&opt.rules_yaml)?;
         Ok(Self { opt, rules })
@@ -132,6 +141,7 @@ impl Check {
         }
     }
 
+    /// Executes journalctl and evaluates results.
     pub fn run(&mut self) -> Outcome {
         let mut cmd = Exec::cmd(&self.opt.journalctl)
             .args(&["--no-pager"])

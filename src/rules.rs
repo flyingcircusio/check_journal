@@ -1,3 +1,5 @@
+//! Loads, parses and applies log matching rules
+
 use anyhow::{ensure, Context, Result};
 use regex::bytes::RegexSet;
 use serde::Deserialize;
@@ -5,6 +7,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
+/// Pair of regular expression sets for matching and excepting lines
 #[derive(Debug, Clone)]
 pub struct RuleSet {
     matches: RegexSet,
@@ -12,6 +15,9 @@ pub struct RuleSet {
 }
 
 impl RuleSet {
+    /// Create rule set from match patterns and exceptions
+    ///
+    /// `title` is used to form error messages and should be either "critical" or "warrning".
     pub fn new(patterns: &[String], exceptions: &[String], title: &str) -> Result<Self> {
         Ok(Self {
             matches: RegexSet::new(patterns)
@@ -21,6 +27,7 @@ impl RuleSet {
         })
     }
 
+    /// Returns true if line matches a pattern but no exception
     pub fn is_match(&self, line: &[u8]) -> bool {
         self.matches.is_match(line) && !self.except.is_match(line)
     }
@@ -44,6 +51,7 @@ struct RulesFile {
     warningexceptions: Vec<String>,
 }
 
+/// Pair of rule sets for critical and warning rules
 #[derive(Debug, Default)]
 pub struct Rules {
     pub crit: RuleSet,
@@ -71,6 +79,7 @@ impl Rules {
         Self::new(rulesfile)
     }
 
+    /// Gets rules specification as YAML file from either a local file path or the net
     pub fn load<P: AsRef<Path>>(source: P) -> Result<Self> {
         let source = source.as_ref();
         let s = source.to_string_lossy();

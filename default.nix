@@ -13,6 +13,7 @@ buildRustPackage rec {
     src = cleanSource ./.;
   };
   cargoSha256 = "161q2psji9qx42irnl3al6b0ng2ccj7sbd6cn0ifnpyq83ppjanr";
+  JOURNALCTL = "${pkgs.systemd}/bin/journalctl";
 
   nativeBuildInputs = with pkgs; [ ronn ];
   postBuild = "make doc";

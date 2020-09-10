@@ -9,11 +9,9 @@ use std::process;
 use structopt::clap::crate_name;
 use structopt::StructOpt;
 
+/// Nagios/Icinga compatible plugin to search `journalctl` output for matching lines
 #[derive(Debug, Default, StructOpt)]
 pub struct Opt {
-    /// Executable to call
-    #[structopt(short, long, default_value = "journalctl")]
-    journalctl: String,
     /// Reads journal entries from the last TIMESPEC (time suffixes accepted)
     ///
     /// This option applies only if no previous position could be read from the state file
@@ -31,6 +29,14 @@ pub struct Opt {
     /// Saves last log position for exact resume
     #[structopt(short = "f", long, value_name = "PATH")]
     statefile: Option<PathBuf>,
+    /// "journalctl" executable to call
+    #[structopt(
+        short,
+        long,
+        value_name = "PATH",
+        default_value = option_env!("JOURNALCTL").unwrap_or("journalctl")
+    )]
+    journalctl: String,
     // ignored, retained for compatibility
     #[structopt(short, long, hidden = true)]
     verbose: bool,
