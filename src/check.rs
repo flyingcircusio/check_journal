@@ -178,14 +178,14 @@ impl Check {
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::borrow::Cow;
 
-    fn stringify<'a>(res: Vec<&[u8]>) -> Vec<String> {
-        res.iter()
-            .map(|s| String::from_utf8_lossy(*s).into_owned())
-            .collect()
+    // helper to convert a list of byte buffers into strings
+    fn stringify<'a>(res: &[&'a [u8]]) -> Vec<Cow<'a, str>> {
+        res.iter().map(|s| String::from_utf8_lossy(s)).collect()
     }
 
-    /// `Check` instance with sensible defaults
+    // factory to create `Check` instance with sensible defaults
     fn check_fac() -> Check {
         let mut c = Check::default();
         c.rules = Rules::load(concat!(env!("CARGO_MANIFEST_DIR"), "/fixtures/rules.yaml"))
@@ -201,7 +201,7 @@ mod test {
             .expect("load rules");
         let res = Filtered::collect(&j[..], &rules);
         assert_eq!(
-            stringify(res.crit),
+            stringify(&res.crit),
             vec![
                 "Mai 31 16:42:47 session[14529]: aborting",
                 "Mai 31 16:42:50 program[14133]: *** CRITICAL ERROR",
@@ -209,7 +209,7 @@ mod test {
             ]
         );
         assert_eq!(
-            stringify(res.warn),
+            stringify(&res.warn),
             vec![
                 "Mai 31 16:42:47 session[14529]: assertion '!window->override_redirect' failed",
                 "Mai 31 16:42:49 user[14529]: 0 errors, 1 failures",

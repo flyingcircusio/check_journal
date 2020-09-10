@@ -14,5 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
+    - name: Lint source
+      run: cargo clippy
     - name: Run tests
-      run: cargo test --verbose
+      run: cargo test
