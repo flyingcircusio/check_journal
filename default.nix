@@ -12,14 +12,14 @@ buildRustPackage rec {
     filter = n: t: baseNameOf n != "target";
     src = cleanSource ./.;
   };
-  cargoSha256 = "1lyz2r5nrfhnrw3lkqh7zq2cqmh8mrvavyv0bfxlvxki36prfczc";
+  cargoSha256 = "1433krrfc7wmmi8bxzig5dx3cnaxxkcrl35nqb6717smrcc1wnp7";
   JOURNALCTL = "${pkgs.systemd}/bin/journalctl";
 
   nativeBuildInputs = with pkgs; [ ronn ];
   postBuild = "make doc";
   postInstall = ''
-    install -D check_journal.1 $out/share/man/man1/check_journal.1
-    install -D README.md $out/share/doc/check_journal/README.md
+    install -D -t $out/share/man/man1 check_journal.1
+    install -D -t $out/share/doc/check_journal README.md
   '';
 
   meta = {

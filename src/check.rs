@@ -6,9 +6,8 @@ use crate::rules::Rules;
 use anyhow::{anyhow, Error, Result};
 use std::fs::File;
 use std::io::Write;
+use std::process::{Command, Stdio};
 use std::str;
-use subprocess::ExitStatus::Exited;
-use subprocess::{Exec, ExitStatus, Redirection};
 
 /// Log lines grouped into critcal, warning and special after applying rule sets
 #[derive(Debug, Clone, Default)]
@@ -97,14 +96,18 @@ impl Outcome {
         }
     }
 
-    fn failed(exit: ExitStatus, stdout: &[u8], stderr: &[u8]) -> Self {
+    fn failed(exit: Option<i32>, stdout: &[u8], stderr: &[u8]) -> Self {
         let mut msg = vec![];
         writeln!(msg, "\n*** stdout ***").ok();
         msg.write_all(stdout).ok();
         writeln!(msg, "\n*** stderr ***").ok();
         msg.write_all(stderr).ok();
+        let title = match exit {
+            Some(code) => anyhow!("journalctl failed with exit status {}", code),
+            None => anyhow!("journalctl aborted due to signal"),
+        };
         Self {
-            status: Err(anyhow!("journalctl failed with {:?}", exit)),
+            status: Err(title),
             message: msg,
         }
     }
@@ -131,40 +134,39 @@ impl Check {
         Ok(Self { opt, rules })
     }
 
-    fn examine(&self, exit: ExitStatus, stdout: &[u8], stderr: &[u8]) -> Outcome {
+    fn examine(&self, exit: Option<i32>, stdout: &[u8], stderr: &[u8]) -> Outcome {
         match (exit, stdout, stderr) {
-            (Exited(0..=1), o, e) if o.is_empty() && e.is_empty() => Outcome::empty(),
-            (Exited(0..=1), o, _) if !o.is_empty() => {
+            (Some(0..=1), o, e) if o.is_empty() && e.is_empty() => Outcome::empty(),
+            (Some(0..=1), o, _) if !o.is_empty() => {
                 Outcome::matched(o, &self.rules, self.opt.lines)
             }
-            (x, o, e) => Outcome::failed(x, o, e),
+            (_, o, e) => Outcome::failed(exit, o, e),
         }
     }
 
     /// Executes journalctl and evaluates results.
     pub fn run(&mut self) -> Outcome {
-        let mut cmd = Exec::cmd(&self.opt.journalctl)
-            .args(&["--no-pager"])
+        let mut cmd = Command::new(&self.opt.journalctl);
+        cmd.arg("--no-pager")
             // 10x lines is a compromise between inaccurate counts and memory usage cap
             .arg(&format!("--lines={}", 10 * self.opt.lines))
             .arg(&format!("--since=-{}", self.opt.span))
-            .stdout(Redirection::Pipe)
-            .stderr(Redirection::Pipe);
+            .stdin(Stdio::null());
         if let Some(sf) = &self.opt.statefile {
-            cmd = cmd.arg(&format!("--cursor-file={}", sf.display()));
+            cmd.arg(&format!("--cursor-file={}", sf.display()));
         }
-        let mut cap = cmd.clone().capture();
+        let mut cap = cmd.output();
         match (&self.opt.statefile, &cap) {
-            (Some(sf), Ok(res)) if res.stderr_str().contains("Failed to seek to cursor") => {
+            (Some(sf), Ok(res))
+                if String::from_utf8_lossy(&res.stderr).contains("Failed to seek to cursor") =>
+            {
                 // This is probably caused by on old-style (pre-1.1.2) status file.
                 // Truncate the status file and try again.
-                cap = File::create(sf)
-                    .map_err(|e| e.into())
-                    .and_then(|_| cmd.capture());
+                cap = File::create(sf).and_then(|_| cmd.output());
             }
             _ => (),
         }
-        cap.map(|c| self.examine(c.exit_status, &c.stdout, &c.stderr))
+        cap.map(|c| self.examine(c.status.code(), &c.stdout, &c.stderr))
             .unwrap_or_else(|e| {
                 Outcome::error(anyhow!(
                     "Failed to execute '{}': {}",
@@ -265,7 +267,7 @@ mod test {
         let c = check_fac();
         for code in 0..=1 {
             assert_eq!(
-                c.examine(Exited(code), b"log line", b"").status.unwrap(),
+                c.examine(Some(code), b"log line", b"").status.unwrap(),
                 Status::Ok("no matches".to_owned())
             );
         }
@@ -276,7 +278,7 @@ mod test {
         let c = check_fac();
         for code in 0..=1 {
             assert_eq!(
-                c.examine(Exited(code), b"log", b"strange debug msg")
+                c.examine(Some(code), b"log", b"strange debug msg")
                     .status
                     .unwrap(),
                 Status::Ok("no matches".to_owned())
@@ -288,11 +290,8 @@ mod test {
     fn should_fail_on_exit_status() {
         let c = check_fac();
         assert_eq!(
-            c.examine(Exited(3), b"", b"")
-                .status
-                .unwrap_err()
-                .to_string(),
-            "journalctl failed with Exited(3)"
+            c.examine(Some(3), b"", b"").status.unwrap_err().to_string(),
+            "journalctl failed with exit status 3"
         );
     }
 
@@ -300,7 +299,7 @@ mod test {
     fn should_ignore_first_line() {
         let c = check_fac();
         assert_eq!(
-            c.examine(Exited(0), b"-- Logs begin with error", b"")
+            c.examine(Some(0), b"-- Logs begin with error", b"")
                 .status
                 .unwrap(),
             Status::Ok("no matches".to_owned())
