@@ -18,3 +18,7 @@ jobs:
       run: cargo clippy
     - name: Run tests
       run: cargo test
+    - name: Build Snap
+      run:  |
+        sudo snap install snapcraft --classic
+        snapcraft
