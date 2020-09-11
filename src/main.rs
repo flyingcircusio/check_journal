@@ -1,13 +1,12 @@
-mod check;
-mod rules;
-
-use crate::check::{Check, Status};
-
 use std::io::{stdout, Write};
 use std::path::PathBuf;
 use std::process;
 use structopt::clap::crate_name;
 use structopt::StructOpt;
+
+mod check;
+mod rules;
+use check::{Check, Status};
 
 /// Nagios/Icinga compatible plugin to search `journalctl` output for matching lines
 #[derive(Debug, Default, StructOpt)]
@@ -48,25 +47,19 @@ pub struct Opt {
     rules_yaml: PathBuf,
 }
 
-fn main() {
-    let mut check = match Check::new(Opt::from_args()) {
-        Ok(app) => app,
-        Err(e) => {
-            println!("{} UNKNOWN - {:?}", crate_name!(), e);
-            process::exit(3);
-        }
-    };
+fn run() -> Result<i32, anyhow::Error> {
+    let mut check = Check::new(Opt::from_args())?;
     let out = check.run();
-    let exitcode = match out.status {
-        Ok(Status::Ok(summary)) => {
+    let exitcode = match out.status? {
+        Status::Ok(summary) => {
             println!("{} OK - {}", crate_name!(), summary);
             0
         }
-        Ok(Status::Warning(n)) => {
+        Status::Warning(n) => {
             println!("{} WARNING - {} warning line(s) found", crate_name!(), n);
             1
         }
-        Ok(Status::Critical(c, w)) => {
+        Status::Critical(c, w) => {
             println!(
                 "{} CRITICAL - {} critical, {} warning line(s) found",
                 crate_name!(),
@@ -75,11 +68,17 @@ fn main() {
             );
             2
         }
-        Err(e) => {
-            println!("{} UNKNOWN - {}", crate_name!(), e);
-            3
-        }
     };
     stdout().write(&out.message).ok();
-    process::exit(exitcode);
+    Ok(exitcode)
+}
+
+fn main() {
+    match run() {
+        Ok(exitcode) => process::exit(exitcode),
+        Err(err) => {
+            println!("{} UNKNOWN - {:?}", crate_name!(), err);
+            process::exit(3);
+        }
+    }
 }

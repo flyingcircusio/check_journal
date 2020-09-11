@@ -12,7 +12,7 @@ buildRustPackage rec {
     filter = n: t: baseNameOf n != "target";
     src = cleanSource ./.;
   };
-  cargoSha256 = "161q2psji9qx42irnl3al6b0ng2ccj7sbd6cn0ifnpyq83ppjanr";
+  cargoSha256 = "1lyz2r5nrfhnrw3lkqh7zq2cqmh8mrvavyv0bfxlvxki36prfczc";
   JOURNALCTL = "${pkgs.systemd}/bin/journalctl";
 
   nativeBuildInputs = with pkgs; [ ronn ];

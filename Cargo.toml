@@ -17,7 +17,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.8"
 structopt = "0.3"
 subprocess = "0.2.4"
-ureq = { version = "1.4", features = ["charset"] }
+ureq = "1.4"
 
 [profile.release]
 lto = "thin"
