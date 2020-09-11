@@ -19,6 +19,4 @@ jobs:
     - name: Run tests
       run: cargo test
     - name: Build Snap
-      run:  |
-        sudo snap install snapcraft --classic
-        snapcraft
+    - uses: snapcore/action-build@v1
