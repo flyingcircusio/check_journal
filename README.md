@@ -1,5 +1,8 @@
 # check_journal
 
+[![check-journal](https://snapcraft.io//check-journal/badge.svg)](https://snapcraft.io/check-journal)
+
+
 Nagios/Icinga compatible plugin to search `journalctl` output for matching lines.
 
 
