@@ -18,3 +18,5 @@ jobs:
       run: cargo clippy
     - name: Run tests
       run: cargo test
+    - name: Build Snap
+    - uses: snapcore/action-build@v1

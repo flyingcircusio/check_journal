@@ -10,6 +10,9 @@ target/release/check_journal: Cargo.toml src/*
 doc: check_journal.1 check_journal.1.html
 
 check_journal.1 check_journal.1.html: check_journal.1.ronn
+ifeq ($(shell gem list \^ronn\$$ -i),false)
+	gem install ronn
+endif
 	ronn \
 	    --manual 'User Commands' \
 	    --organization 'Flying Circus Internet Operations' \
