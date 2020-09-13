@@ -19,4 +19,4 @@ jobs:
     - name: Run tests
       run: cargo test
     - name: Build Snap
-    - uses: snapcore/action-build@v1
+      uses: snapcore/action-build@v1
