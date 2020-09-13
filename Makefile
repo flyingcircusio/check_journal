@@ -1,15 +1,15 @@
 PREFIX = /usr/local
 
-all: bin doc
+all: bin man
 
 bin: target/release/check_journal
 
 target/release/check_journal: Cargo.toml src/*
 	cargo build --release
 
-doc: check_journal.1 check_journal.1.html
+man: man/check_journal.1 man/check_journal.1.html
 
-check_journal.1 check_journal.1.html: check_journal.1.ronn
+man/check_journal.1 man/check_journal.1.html: man/check_journal.1.ronn
 ifeq ($(shell gem list \^ronn\$$ -i),false)
 	gem install ronn
 endif
@@ -21,13 +21,14 @@ endif
 test:
 	cargo test
 
-install: bin doc
+install: bin man
 	strip target/release/check_journal
 	install -D -t $(DESTDIR)$(PREFIX)/bin target/release/check_journal
-	install -D -t $(DESTDIR)$(PREFIX)/share/man/man1 -m 0644 check_journal.1
+	install -D -t $(DESTDIR)$(PREFIX)/share/man/man1 -m 0644 man/check_journal.1
+	install -D -t $(DESTDIR)$(PREFIX)/share/doc/check_journal -m 0644 README.md
 
 clean:
-	rm check_journal.1 check_journal.1.html
+	rm -f man/check_journal.1 man/check_journal.1.html
 	cargo clean
 
-PHONY: all clean bin doc test install
+PHONY: all clean bin man test install

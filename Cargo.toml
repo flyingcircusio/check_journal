@@ -18,6 +18,9 @@ serde_yaml = "0.8"
 structopt = "0.3"
 ureq = "1.4"
 
+[dev-dependencies]
+version-sync = "0.9"
+
 [profile.release]
 codegen-units = 1
 lto = "thin"

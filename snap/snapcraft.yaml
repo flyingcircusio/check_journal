@@ -9,12 +9,14 @@ base: core18
 
 apps:
   check-journal:
-    command: usr/local/bin/check_journal
+    command: usr/bin/check_journal
 
 parts:
   check-journal:
     source: .
     plugin: make
+    make-parameters:
+      - PREFIX=/usr
     build-packages:
       - cargo
       - rubygems

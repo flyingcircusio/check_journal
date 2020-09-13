@@ -66,14 +66,16 @@ snapcraft clean
 snapcraft
 ```
 
-#### Installing the snap
-Once released, this will download the snap from the snapstore and install
+### Installing the snap
+
+Once released, this will download the snap from the snap store and install
 on the machine.
 ```bash
 snap install check-journal
 ```
 
-#### Running the snap
+### Running the snap
+
 ```bash
 check-journal
 # -- or -- #
