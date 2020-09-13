@@ -19,5 +19,4 @@ parts:
       - PREFIX=/usr
     build-packages:
       - cargo
-      - rubygems
-      - ruby-dev
+      - ruby-ronn

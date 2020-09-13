@@ -1,6 +1,9 @@
 2020-09-13  Christian Kauhaus <kc@flyingcircus.io>
 
 	* Provide snap package.
+	* Remove undocumented option "--since".
+	* Rename "--lines" to "--limit" and mark the former as obsolete.
+	* Pull in complete journalctl by default and not only 10x limit.
 
 2020-09-10  Christian Kauhaus <kc@flyingcircus.io>
 

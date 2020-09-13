@@ -34,8 +34,12 @@ systems.
     Instructs `journalctl` to emit only records logged during the last TIMESPEC.
     See systemd.time(7) pfor time span syntax. Examples: 600s, 10m.
 
-* `-l`, `--lines` <N>:
-    Restricts reporting of critical and warning matches to N lines each.
+* `-l`, `--limit` <N>:
+    Truncates report of critical and warning matches to N lines each. Alias:
+    `--lines` (deprecated).
+
+* `-L`, `--no-limit`:
+    Does not truncate output. Mutually exclusive with `-l`/`--limit`.
 
 * `-j`, `--journalctl` <PATH>:
     Specifies the journalctl executable.

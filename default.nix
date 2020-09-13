@@ -12,14 +12,19 @@ buildRustPackage rec {
     filter = n: t: baseNameOf n != "target";
     src = cleanSource ./.;
   };
-  cargoSha256 = "146ip3qn8lvyzp61wijl714lwfbmvxpga4iwgag6409b0cinb56k";
+  cargoSha256 = "08mmfgnlh9nw21x5pkw6wq2lbm438zz58q84h7rrliacn743lmvy";
+
+  # used in src/main.rs to set default path for journalctl
   JOURNALCTL = "${pkgs.systemd}/bin/journalctl";
 
-  nativeBuildInputs = with pkgs; [ ronn ];
-  postBuild = "make doc";
+  nativeBuildInputs = with pkgs; [ ronn utillinux ];
+  postBuild = "make man";
+
+  preCheck = "patchShebangs fixtures/journalctl-cursor-file.sh";
+
   postInstall = ''
-    install -D -t $out/share/man/man1 man/check_journal.1
-    install -D -t $out/share/doc/check_journal README.md
+    install -m 0644 -D -t $out/share/man/man1 man/check_journal.1
+    install -m 0644 -D -t $out/share/doc/check_journal README.md
   '';
 
   meta = {

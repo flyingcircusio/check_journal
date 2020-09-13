@@ -60,10 +60,11 @@ impl Default for Outcome {
 }
 
 impl Outcome {
-    fn push(mut self, title: &str, matches: &[&[u8]], max_lines: usize) -> Self {
+    fn push(mut self, title: &str, matches: &[&[u8]], max_lines: Option<usize>) -> Self {
         if matches.is_empty() {
             return self;
         }
+        let max_lines = max_lines.unwrap_or(std::usize::MAX);
         let trunc = match matches.len() {
             n if n > max_lines => " (truncated)",
             _ => "",
@@ -76,7 +77,7 @@ impl Outcome {
         self
     }
 
-    fn matched(journal: &[u8], rules: &Rules, max_lines: usize) -> Self {
+    fn matched(journal: &[u8], rules: &Rules, max_lines: Option<usize>) -> Self {
         let mut res = Self::default();
         let filt = Filtered::collect(journal, rules);
         res = res.push("critical", &filt.crit, max_lines);
@@ -135,11 +136,14 @@ impl Check {
     }
 
     fn examine(&self, exit: Option<i32>, stdout: &[u8], stderr: &[u8]) -> Outcome {
+        let limit = if self.opt.no_limit {
+            None
+        } else {
+            Some(self.opt.limit)
+        };
         match (exit, stdout, stderr) {
             (Some(0..=1), o, e) if o.is_empty() && e.is_empty() => Outcome::empty(),
-            (Some(0..=1), o, _) if !o.is_empty() => {
-                Outcome::matched(o, &self.rules, self.opt.lines)
-            }
+            (Some(0..=1), o, _) if !o.is_empty() => Outcome::matched(o, &self.rules, limit),
             (_, o, e) => Outcome::failed(exit, o, e),
         }
     }
@@ -148,8 +152,6 @@ impl Check {
     pub fn run(&mut self) -> Outcome {
         let mut cmd = Command::new(&self.opt.journalctl);
         cmd.arg("--no-pager")
-            // 10x lines is a compromise between inaccurate counts and memory usage cap
-            .arg(&format!("--lines={}", 10 * self.opt.lines))
             .arg(&format!("--since=-{}", self.opt.span))
             .stdin(Stdio::null());
         if let Some(sf) = &self.opt.statefile {
@@ -170,7 +172,7 @@ impl Check {
             .unwrap_or_else(|e| {
                 Outcome::error(anyhow!(
                     "Failed to execute '{}': {}",
-                    self.opt.journalctl,
+                    self.opt.journalctl.display(),
                     e
                 ))
             })
@@ -180,7 +182,12 @@ impl Check {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    use assert_matches::assert_matches;
     use std::borrow::Cow;
+    use std::fs;
+    use std::path::PathBuf;
+    use tempfile::NamedTempFile;
 
     // helper to convert a list of byte buffers into strings
     fn stringify<'a>(res: &[&'a [u8]]) -> Vec<Cow<'a, str>> {
@@ -192,7 +199,7 @@ mod test {
         let mut c = Check::default();
         c.rules = Rules::load(concat!(env!("CARGO_MANIFEST_DIR"), "/fixtures/rules.yaml"))
             .expect("load from file");
-        c.opt.lines = 10;
+        c.opt.limit = 10;
         c
     }
 
@@ -221,7 +228,7 @@ mod test {
 
     #[test]
     fn outcome_should_list_matches() {
-        let out = Outcome::default().push("test1", &[b"first match", b"second match"], 10);
+        let out = Outcome::default().push("test1", &[b"first match", b"second match"], None);
         assert_eq!(
             String::from_utf8_lossy(&out.message),
             "\n*** test1 hits ***\n\
@@ -233,7 +240,7 @@ mod test {
 
     #[test]
     fn outcome_should_truncate_lines() {
-        let out = Outcome::default().push("test2", &[b"first match", b"second match"], 1);
+        let out = Outcome::default().push("test2", &[b"first match", b"second match"], Some(1));
         assert_eq!(
             String::from_utf8_lossy(&out.message),
             "\n*** test2 hits (truncated) ***\n\
@@ -246,11 +253,11 @@ mod test {
     fn should_return_warn_crit_status() {
         let r = Rules::load(concat!(env!("CARGO_MANIFEST_DIR"), "/fixtures/rules.yaml"))
             .expect("load rules");
-        let out = Outcome::matched(b"all fine", &r, 10);
+        let out = Outcome::matched(b"all fine", &r, None);
         assert_eq!(out.status.unwrap(), Status::Ok("no matches".to_owned()));
-        let out = Outcome::matched(b"error", &r, 10);
+        let out = Outcome::matched(b"error", &r, None);
         assert_eq!(out.status.unwrap(), Status::Critical(1, 0));
-        let out = Outcome::matched(b"warning", &r, 10);
+        let out = Outcome::matched(b"warning", &r, None);
         assert_eq!(out.status.unwrap(), Status::Warning(1));
     }
 
@@ -304,5 +311,17 @@ mod test {
                 .unwrap(),
             Status::Ok("no matches".to_owned())
         );
+    }
+
+    #[test]
+    fn restart_on_old_state_file() {
+        let mut c = Check::default();
+        c.opt.journalctl =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/journalctl-cursor-file.sh");
+        let state = NamedTempFile::new().unwrap();
+        c.opt.statefile = Some(state.path().to_owned());
+        fs::write(state.path(), "old state file\n").unwrap();
+        assert_matches!(c.run().status, Ok(Status::Ok(_)));
+        assert_eq!("new-format\n", fs::read_to_string(state.path()).unwrap());
     }
 }

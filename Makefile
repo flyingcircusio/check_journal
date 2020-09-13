@@ -10,9 +10,6 @@ target/release/check_journal: Cargo.toml src/*
 man: man/check_journal.1 man/check_journal.1.html
 
 man/check_journal.1 man/check_journal.1.html: man/check_journal.1.ronn
-ifeq ($(shell gem list \^ronn\$$ -i),false)
-	gem install ronn
-endif
 	ronn \
 	    --manual 'User Commands' \
 	    --organization 'Flying Circus Internet Operations' \
@@ -28,7 +25,7 @@ install: bin man
 	install -D -t $(DESTDIR)$(PREFIX)/share/doc/check_journal -m 0644 README.md
 
 clean:
-	rm -f man/check_journal.1 man/check_journal.1.html
+	rm -f man/check_journal.1 man/check_journal.1.html result *.snap
 	cargo clean
 
 PHONY: all clean bin man test install

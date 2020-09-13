@@ -14,17 +14,14 @@ pub struct Opt {
     /// Reads journal entries from the last TIMESPEC (time suffixes accepted)
     ///
     /// This option applies only if no previous position could be read from the state file
-    #[structopt(
-        short,
-        long,
-        alias = "since",
-        default_value = "600s",
-        value_name = "TIMESPEC"
-    )]
+    #[structopt(short, long, default_value = "600s", value_name = "TIMESPEC")]
     span: String,
-    /// Shows maximum N lines for critical/warning matches
-    #[structopt(short, long, alias = "limit", default_value = "25", value_name = "N")]
-    lines: usize,
+    /// Truncates report of critical/warning matches to N lines each
+    #[structopt(short, long, alias = "lines", default_value = "50", value_name = "N")]
+    limit: usize,
+    /// Does not truncate output (opposite of --limit)
+    #[structopt(short = "L", long, conflicts_with = "limit")]
+    no_limit: bool,
     /// Saves last log position for exact resume
     #[structopt(short = "f", long, value_name = "PATH")]
     statefile: Option<PathBuf>,
@@ -35,7 +32,7 @@ pub struct Opt {
         value_name = "PATH",
         default_value = option_env!("JOURNALCTL").unwrap_or("journalctl")
     )]
-    journalctl: String,
+    journalctl: PathBuf,
     // ignored, retained for compatibility
     #[structopt(short, long, hidden = true)]
     verbose: bool,
