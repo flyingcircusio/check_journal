@@ -46,8 +46,8 @@ pub struct Opt {
 
 fn run() -> Result<i32, anyhow::Error> {
     let mut check = Check::new(Opt::from_args())?;
-    let out = check.run();
-    let exitcode = match out.status? {
+    let out = check.evaluate(check.exec_journalctl()?)?;
+    let exitcode = match out.status {
         Status::Ok(summary) => {
             println!("{} OK - {}", crate_name!(), summary);
             0
@@ -66,7 +66,7 @@ fn run() -> Result<i32, anyhow::Error> {
             2
         }
     };
-    stdout().write(&out.message).ok();
+    write!(stdout(), "{}", &out.message).ok();
     Ok(exitcode)
 }
 

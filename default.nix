@@ -6,7 +6,7 @@ with pkgs.rustPlatform;
 
 buildRustPackage rec {
   name = "check-journal-${version}";
-  version = "1.1.3-dev";
+  version = "1.2.0-dev";
 
   src = cleanSourceWith {
     filter = n: t: baseNameOf n != "target";

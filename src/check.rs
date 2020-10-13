@@ -3,34 +3,11 @@
 use super::Opt;
 use crate::rules::Rules;
 
-use anyhow::{anyhow, Error, Result};
+use anyhow::{bail, Context, Result};
+use std::fmt::Write;
 use std::fs::File;
-use std::io::Write;
-use std::process::{Command, Stdio};
+use std::process::{Command, Output, Stdio};
 use std::str;
-
-/// Log lines grouped into critcal, warning and special after applying rule sets
-#[derive(Debug, Clone, Default)]
-struct Filtered<'a> {
-    crit: Vec<&'a [u8]>,
-    warn: Vec<&'a [u8]>,
-}
-
-impl<'a> Filtered<'a> {
-    fn collect(journal: &'a [u8], rules: &'_ Rules) -> Filtered<'a> {
-        journal
-            .split(|&c| c as char == '\n')
-            .filter(|l| !l.is_empty() && !l.starts_with(b"-- Logs begin "))
-            .fold(Default::default(), |mut acc, line| {
-                if rules.crit.is_match(line) {
-                    acc.crit.push(line);
-                } else if rules.warn.is_match(line) {
-                    acc.warn.push(line);
-                };
-                acc
-            })
-    }
-}
 
 /// Return status according to Nagios guidelines.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,80 +20,44 @@ pub enum Status {
     Critical(usize, usize),
 }
 
-/// Overall status and collection of messages which match rule patterns.
-#[derive(Debug)]
-pub struct Outcome {
-    pub status: Result<Status>,
-    pub message: Vec<u8>,
-}
-
-impl Default for Outcome {
+impl Default for Status {
     fn default() -> Self {
-        Self {
-            status: Ok(Status::Ok(String::new())),
-            message: vec![],
-        }
+        Status::Ok(String::default())
     }
 }
 
-impl Outcome {
-    fn push(mut self, title: &str, matches: &[&[u8]], max_lines: Option<usize>) -> Self {
-        if matches.is_empty() {
-            return self;
-        }
-        let max_lines = max_lines.unwrap_or(std::usize::MAX);
-        let trunc = match matches.len() {
-            n if n > max_lines => " (truncated)",
-            _ => "",
-        };
-        writeln!(self.message, "\n*** {} hits{} ***\n", title, trunc).ok();
-        for m in matches.iter().take(max_lines) {
-            self.message.extend_from_slice(m);
-            self.message.push(b'\n');
-        }
-        self
-    }
+/// Overall status and collection of messages which match rule patterns.
+#[derive(Debug, Default)]
+pub struct Outcome {
+    pub status: Status,
+    pub message: String,
+}
 
-    fn matched(journal: &[u8], rules: &Rules, max_lines: Option<usize>) -> Self {
-        let mut res = Self::default();
-        let filt = Filtered::collect(journal, rules);
-        res = res.push("critical", &filt.crit, max_lines);
-        res = res.push("warning", &filt.warn, max_lines);
-        res.status = Ok(match (filt.crit.len(), filt.warn.len()) {
-            (0, 0) => Status::Ok("no matches".to_owned()),
-            (0, w) => Status::Warning(w),
-            (c, w) => Status::Critical(c, w),
-        });
-        res
-    }
+/// Log lines grouped into critcal and warning after applying rule sets
+#[derive(Debug)]
+pub struct Collection<'a> {
+    rules: &'a Rules,
+    critical: Vec<&'a str>,
+    warning: Vec<&'a str>,
+}
 
-    fn empty() -> Self {
+impl<'a> Collection<'a> {
+    fn new(rules: &'a Rules) -> Self {
         Self {
-            status: Ok(Status::Ok("no output".to_owned())),
-            ..Default::default()
+            rules,
+            critical: Vec::with_capacity(100),
+            warning: Vec::with_capacity(100),
         }
     }
 
-    fn failed(exit: Option<i32>, stdout: &[u8], stderr: &[u8]) -> Self {
-        let mut msg = vec![];
-        writeln!(msg, "\n*** stdout ***").ok();
-        msg.write_all(stdout).ok();
-        writeln!(msg, "\n*** stderr ***").ok();
-        msg.write_all(stderr).ok();
-        let title = match exit {
-            Some(code) => anyhow!("journalctl failed with exit status {}", code),
-            None => anyhow!("journalctl aborted due to signal"),
-        };
-        Self {
-            status: Err(title),
-            message: msg,
+    fn push(&mut self, line: &'a str) {
+        if line.is_empty() || line.starts_with("-- Logs begin ") {
+            return;
         }
-    }
-
-    fn error(e: Error) -> Self {
-        Outcome {
-            status: Err(e),
-            ..Self::default()
+        if self.rules.crit.is_match(line) {
+            self.critical.push(line);
+        } else if self.rules.warn.is_match(line) {
+            self.warning.push(line);
         }
     }
 }
@@ -135,21 +76,8 @@ impl Check {
         Ok(Self { opt, rules })
     }
 
-    fn examine(&self, exit: Option<i32>, stdout: &[u8], stderr: &[u8]) -> Outcome {
-        let limit = if self.opt.no_limit {
-            None
-        } else {
-            Some(self.opt.limit)
-        };
-        match (exit, stdout, stderr) {
-            (Some(0..=1), o, e) if o.is_empty() && e.is_empty() => Outcome::empty(),
-            (Some(0..=1), o, _) if !o.is_empty() => Outcome::matched(o, &self.rules, limit),
-            (_, o, e) => Outcome::failed(exit, o, e),
-        }
-    }
-
-    /// Executes journalctl and evaluates results.
-    pub fn run(&mut self) -> Outcome {
+    /// Runs journalcttl. Optionally re-runs journalctl if state file contains garbage.
+    pub fn exec_journalctl(&self) -> Result<Output> {
         let mut cmd = Command::new(&self.opt.journalctl);
         cmd.arg("--no-pager")
             .arg(&format!("--since=-{}", self.opt.span))
@@ -157,171 +85,73 @@ impl Check {
         if let Some(sf) = &self.opt.statefile {
             cmd.arg(&format!("--cursor-file={}", sf.display()));
         }
-        let mut cap = cmd.output();
-        match (&self.opt.statefile, &cap) {
+        let mut out = cmd.output();
+        match (&self.opt.statefile, &out) {
             (Some(sf), Ok(res))
                 if String::from_utf8_lossy(&res.stderr).contains("Failed to seek to cursor") =>
             {
                 // This is probably caused by on old-style (pre-1.1.2) status file.
                 // Truncate the status file and try again.
-                cap = File::create(sf).and_then(|_| cmd.output());
+                out = File::create(sf).and_then(|_| cmd.output());
             }
             _ => (),
         }
-        cap.map(|c| self.examine(c.status.code(), &c.stdout, &c.stderr))
-            .unwrap_or_else(|e| {
-                Outcome::error(anyhow!(
-                    "Failed to execute '{}': {}",
-                    self.opt.journalctl.display(),
-                    e
-                ))
-            })
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    use assert_matches::assert_matches;
-    use std::borrow::Cow;
-    use std::fs;
-    use std::path::PathBuf;
-    use tempfile::NamedTempFile;
-
-    // helper to convert a list of byte buffers into strings
-    fn stringify<'a>(res: &[&'a [u8]]) -> Vec<Cow<'a, str>> {
-        res.iter().map(|s| String::from_utf8_lossy(s)).collect()
-    }
-
-    // factory to create `Check` instance with sensible defaults
-    fn check_fac() -> Check {
-        let mut c = Check::default();
-        c.rules = Rules::load(concat!(env!("CARGO_MANIFEST_DIR"), "/fixtures/rules.yaml"))
-            .expect("load from file");
-        c.opt.limit = 10;
-        c
-    }
-
-    #[test]
-    fn filter_crit_warn() {
-        let j = include_bytes!("../fixtures/journal.txt");
-        let rules = Rules::load(concat!(env!("CARGO_MANIFEST_DIR"), "/fixtures/rules.yaml"))
-            .expect("load rules");
-        let res = Filtered::collect(&j[..], &rules);
-        assert_eq!(
-            stringify(&res.crit),
-            vec![
-                "Mai 31 16:42:47 session[14529]: aborting",
-                "Mai 31 16:42:50 program[14133]: *** CRITICAL ERROR",
-                "Mai 31 16:43:20 program1[6094]: timestamp:\"1527780630\",level:\"abort\"",
-            ]
-        );
-        assert_eq!(
-            stringify(&res.warn),
-            vec![
-                "Mai 31 16:42:47 session[14529]: assertion '!window->override_redirect' failed",
-                "Mai 31 16:42:49 user[14529]: 0 errors, 1 failures",
-            ]
-        );
-    }
-
-    #[test]
-    fn outcome_should_list_matches() {
-        let out = Outcome::default().push("test1", &[b"first match", b"second match"], None);
-        assert_eq!(
-            String::from_utf8_lossy(&out.message),
-            "\n*** test1 hits ***\n\
-             \n\
-             first match\n\
-             second match\n"
-        );
-    }
-
-    #[test]
-    fn outcome_should_truncate_lines() {
-        let out = Outcome::default().push("test2", &[b"first match", b"second match"], Some(1));
-        assert_eq!(
-            String::from_utf8_lossy(&out.message),
-            "\n*** test2 hits (truncated) ***\n\
-             \n\
-             first match\n"
-        );
-    }
-
-    #[test]
-    fn should_return_warn_crit_status() {
-        let r = Rules::load(concat!(env!("CARGO_MANIFEST_DIR"), "/fixtures/rules.yaml"))
-            .expect("load rules");
-        let out = Outcome::matched(b"all fine", &r, None);
-        assert_eq!(out.status.unwrap(), Status::Ok("no matches".to_owned()));
-        let out = Outcome::matched(b"error", &r, None);
-        assert_eq!(out.status.unwrap(), Status::Critical(1, 0));
-        let out = Outcome::matched(b"warning", &r, None);
-        assert_eq!(out.status.unwrap(), Status::Warning(1));
-    }
-
-    #[test]
-    fn should_report_no_output() {
-        assert_eq!(
-            Outcome::empty().status.unwrap(),
-            Status::Ok("no output".to_owned())
-        );
-    }
-
-    #[test]
-    fn should_match_on_exit_0_or_1() {
-        let c = check_fac();
-        for code in 0..=1 {
-            assert_eq!(
-                c.examine(Some(code), b"log line", b"").status.unwrap(),
-                Status::Ok("no matches".to_owned())
-            );
+        let out =
+            out.with_context(|| format!("Failed to execute {}", self.opt.journalctl.display()))?;
+        let code = out.status.code().unwrap_or(-1);
+        if code != 0 {
+            bail!(
+                "journalctl error: {} (exit {})",
+                String::from_utf8_lossy(&out.stderr).trim().to_owned(),
+                code
+            )
+        } else {
+            Ok(out)
         }
     }
 
-    #[test]
-    fn should_disregard_stderr_on_exit_0_1() {
-        let c = check_fac();
-        for code in 0..=1 {
-            assert_eq!(
-                c.examine(Some(code), b"log", b"strange debug msg")
-                    .status
-                    .unwrap(),
-                Status::Ok("no matches".to_owned())
-            );
+    fn format_message(&self, title: &str, matches: &'_ [&'_ str]) -> String {
+        let mut msg = String::with_capacity(4096);
+        if matches.is_empty() {
+            return msg;
         }
+        let max_lines = match (self.opt.no_limit, self.opt.limit) {
+            (true, _) => usize::MAX,
+            (false, 0) => usize::MAX,
+            (false, l) => l,
+        };
+        let trunc = match matches.len() {
+            n if n > max_lines => " (truncated)",
+            _ => "",
+        };
+        writeln!(msg, "*** {}{} ***\n", title, trunc).ok();
+        for m in matches.iter().take(max_lines) {
+            writeln!(msg, "{}", m).ok();
+        }
+        msg
     }
 
-    #[test]
-    fn should_fail_on_exit_status() {
-        let c = check_fac();
-        assert_eq!(
-            c.examine(Some(3), b"", b"").status.unwrap_err().to_string(),
-            "journalctl failed with exit status 3"
-        );
-    }
-
-    #[test]
-    fn should_ignore_first_line() {
-        let c = check_fac();
-        assert_eq!(
-            c.examine(Some(0), b"-- Logs begin with error", b"")
-                .status
-                .unwrap(),
-            Status::Ok("no matches".to_owned())
-        );
-    }
-
-    #[test]
-    fn restart_on_old_state_file() {
-        let mut c = Check::default();
-        c.opt.journalctl =
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/journalctl-cursor-file.sh");
-        let state = NamedTempFile::new().unwrap();
-        c.opt.statefile = Some(state.path().to_owned());
-        fs::write(state.path(), "old state file\n").unwrap();
-        assert_matches!(c.run().status, Ok(Status::Ok(_)));
-        assert_eq!("new-format\n", fs::read_to_string(state.path()).unwrap());
+    /// Evaluates journalctl output and returrns appropriate result
+    pub fn evaluate(&mut self, journal: Output) -> Result<Outcome> {
+        let mut collection = Collection::new(&self.rules);
+        let stdout = String::from_utf8_lossy(&journal.stdout);
+        for line in stdout.split('\n') {
+            collection.push(line)
+        }
+        let mut msg = Vec::with_capacity(2);
+        if !collection.critical.is_empty() {
+            msg.push(self.format_message("CRITICAL MATCHES", &collection.critical))
+        }
+        if !collection.warning.is_empty() {
+            msg.push(self.format_message("WARNING MATCHES", &collection.warning))
+        }
+        Ok(Outcome {
+            status: match (collection.critical.len(), collection.warning.len()) {
+                (c, w) if c > 0 => Status::Critical(c, w),
+                (0, w) if w > 0 => Status::Warning(w),
+                (_, _) => Status::Ok("No matches".into()),
+            },
+            message: msg.join("\n"),
+        })
     }
 }

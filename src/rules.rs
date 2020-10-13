@@ -1,7 +1,7 @@
 //! Loads, parses and applies log matching rules
 
 use anyhow::{ensure, Context, Result};
-use regex::bytes::RegexSet;
+use regex::RegexSet;
 use serde::Deserialize;
 use std::fs::File;
 use std::io::Read;
@@ -28,7 +28,7 @@ impl RuleSet {
     }
 
     /// Returns true if line matches a pattern but no exception
-    pub fn is_match(&self, line: &[u8]) -> bool {
+    pub fn is_match(&self, line: &str) -> bool {
         self.matches.is_match(line) && !self.except.is_match(line)
     }
 }
@@ -143,9 +143,9 @@ mod test {
     #[test]
     fn matches_and_exceptions() {
         let r = load_rules();
-        assert!(r.crit.is_match(b"0 Errors"));
-        assert!(!r.crit.is_match(b"0 errors"));
-        assert!(r.warn.is_match(b"some WARN foo"));
-        assert!(!r.warn.is_match(b"WARN: node[1234]: Exception in function"))
+        assert!(r.crit.is_match("0 Errors"));
+        assert!(!r.crit.is_match("0 errors"));
+        assert!(r.warn.is_match("some WARN foo"));
+        assert!(!r.warn.is_match("WARN: node[1234]: Exception in function"))
     }
 }
