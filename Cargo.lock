@@ -67,12 +67,11 @@ checksum = "4785bdd1c96b2a846b2bd7cc02e86b6b3dbf14e7e53446c4f54c92a361040822"
 
 [[package]]
 name = "check_journal"
-version = "1.2.0-dev"
+version = "1.2.0"
 dependencies = [
  "anyhow",
  "clap",
  "lazy_static",
- "polling",
  "regex",
  "serde",
  "serde_yaml",
@@ -209,19 +208,6 @@ name = "percent-encoding"
 version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4fd5641d01c8f18a23da7b6fe29298ff4b55afcccdf78973b24cf3175fee32e"
-
-[[package]]
-name = "polling"
-version = "1.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0307b8c7f438902536321f63c28cab0362f6ee89f1c7da47e3642ff956641c8b"
-dependencies = [
- "cfg-if",
- "libc",
- "log",
- "wepoll-sys-stjepang",
- "winapi",
-]
 
 [[package]]
 name = "ppv-lite86"
@@ -738,15 +724,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0f20dea7535251981a9670857150d571846545088359b28e4951d350bdaf179f"
 dependencies = [
  "webpki",
-]
-
-[[package]]
-name = "wepoll-sys-stjepang"
-version = "1.0.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fdfbb03f290ca0b27922e8d48a0997b4ceea12df33269b9f75e713311eb178d"
-dependencies = [
- "cc",
 ]
 
 [[package]]

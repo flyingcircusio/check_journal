@@ -1,5 +1,5 @@
 name: check-journal
-version: '1.2.0-dev'
+version: '1.2.0'
 summary: Nagios/Icinga compatible plugin for journalctl
 description: Nagios/Icinga compatible plugin to search `journalctl` output for matching lines
 grade: stable

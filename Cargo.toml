@@ -1,6 +1,6 @@
 [package]
 name = "check_journal"
-version = "1.2.0-dev"
+version = "1.2.0"
 authors = ["Christian Kauhaus <kc@flyingcircus.io>"]
 description = "Nagios/Icinga compatible plugin to search `journalctl` output for matching lines"
 edition = "2018"
@@ -17,7 +17,6 @@ serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.8"
 structopt = "0.3"
 ureq = { version = "1.4", default-features = false, features = ["tls"] }
-polling = "1.0.3"
 
 [dev-dependencies]
 lazy_static = "1.4"
@@ -25,7 +24,6 @@ tempfile = "3.1"
 version-sync = "0.9"
 
 [profile.release]
-#codegen-units = 1
 lto = "thin"
 opt-level = "s"
 panic = "abort"

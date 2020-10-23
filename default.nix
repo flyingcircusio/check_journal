@@ -1,4 +1,4 @@
-# Build expression for NixOS 20.03
+# Build expression for NixOS 20.09
 { pkgs ? import <nixpkgs> {} }:
 
 with pkgs.lib;
@@ -6,13 +6,13 @@ with pkgs.rustPlatform;
 
 buildRustPackage rec {
   name = "check-journal-${version}";
-  version = "1.2.0-dev";
+  version = "1.2.0";
 
   src = cleanSourceWith {
     filter = n: t: baseNameOf n != "target";
     src = cleanSource ./.;
   };
-  cargoSha256 = "08mmfgnlh9nw21x5pkw6wq2lbm438zz58q84h7rrliacn743lmvy";
+  cargoSha256 = "03rm3rq0wwv5gcgwf3q78firrllig3vv42kkyhcn6iyswcj03zff";
 
   # used in src/main.rs to set default path for journalctl
   JOURNALCTL = "${pkgs.systemd}/bin/journalctl";
@@ -20,7 +20,7 @@ buildRustPackage rec {
   nativeBuildInputs = with pkgs; [ ronn utillinux ];
   postBuild = "make man";
 
-  preCheck = "patchShebangs fixtures/journalctl-cursor-file.sh";
+  preCheck = "patchShebangs fixtures/*.sh";
 
   postInstall = ''
     install -m 0644 -D -t $out/share/man/man1 man/check_journal.1
