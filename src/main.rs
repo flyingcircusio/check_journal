@@ -6,6 +6,9 @@ use structopt::StructOpt;
 
 mod check;
 mod rules;
+#[cfg(test)]
+mod tests;
+
 use check::{Check, Status};
 
 /// Nagios/Icinga compatible plugin to search `journalctl` output for matching lines

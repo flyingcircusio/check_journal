@@ -52,7 +52,7 @@ struct RulesFile {
 }
 
 /// Pair of rule sets for critical and warning rules
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Rules {
     pub crit: RuleSet,
     pub warn: RuleSet,

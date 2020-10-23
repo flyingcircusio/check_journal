@@ -1,4 +1,4 @@
-#! /bin/bash -e
+#!/bin/bash -e
 
 # Test dummy for cursor file upgrade
 #
@@ -27,10 +27,12 @@ while true; do
 		'--since')
 			shift 2
 			;;
-		--)	exit
+		--)	break
 			;;
 		*)
 			shift
 			;;
 	esac
 done
+
+cat ${0%/*}/journal.txt

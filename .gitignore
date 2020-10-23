@@ -6,3 +6,4 @@
 /*.snap
 .*.sw?
 /target/
+tarpaulin-report.html

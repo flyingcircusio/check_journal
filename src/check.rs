@@ -76,7 +76,7 @@ impl Check {
         Ok(Self { opt, rules })
     }
 
-    /// Runs journalcttl. Optionally re-runs journalctl if state file contains garbage.
+    /// Runs journalctl. Optionally re-runs journalctl if state file contains garbage.
     pub fn exec_journalctl(&self) -> Result<Output> {
         let mut cmd = Command::new(&self.opt.journalctl);
         cmd.arg("--no-pager")
@@ -153,5 +153,157 @@ impl Check {
             },
             message: msg.join("\n"),
         })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::tests::{fixture, RULES};
+    use std::fs;
+    use std::io::Write;
+
+    #[test]
+    fn push_to_collection() {
+        let mut c = Collection::new(&RULES);
+        assert!(c.critical.is_empty());
+        assert!(c.warning.is_empty());
+        c.push(""); // should be ignored
+        c.push("-- Logs begin at Mon 2020-10-19 06:28:37 CEST"); // should be ignored
+        c.push("warning: 1");
+        c.push("error: 2");
+        assert_eq!(&c.warning, &["warning: 1"]);
+        assert_eq!(&c.critical, &["error: 2"]);
+    }
+
+    fn check(journalctl_fixture: &str) -> Check {
+        Check {
+            opt: Opt {
+                journalctl: fixture(journalctl_fixture),
+                ..Opt::default()
+            },
+            rules: RULES.clone(),
+        }
+    }
+
+    #[test]
+    fn run_journalctl() {
+        let check = check("journalctl-cursor-file.sh");
+        assert_eq!(
+            check
+                .exec_journalctl()
+                .expect("exec_journalctl() failed")
+                .stdout,
+            fs::read(fixture("journal.txt")).unwrap()
+        );
+    }
+
+    #[test]
+    fn run_journalctl_twice_with_corrupted_state_file() {
+        let mut tf = tempfile::NamedTempFile::new().unwrap();
+        tf.write_all(b"garbage\n").unwrap();
+        tf.flush().ok();
+        let mut check = check("journalctl-cursor-file.sh");
+        check.opt.statefile = Some(tf.path().into());
+        check.exec_journalctl().unwrap();
+        assert_eq!(std::fs::read_to_string(tf.path()).unwrap(), "new-format\n");
+    }
+
+    #[test]
+    fn handle_journalctl_failure() {
+        let check = check("journalctl-error.sh");
+        assert_eq!(
+            check.exec_journalctl().unwrap_err().to_string(),
+            "journalctl error: dummy for testing (exit 1)"
+        );
+    }
+
+    use std::os::unix::process::ExitStatusExt;
+    use std::process::{ExitStatus, Output};
+
+    #[test]
+    fn evaluate_ok() {
+        let mut check = check("journalctl-ok.sh");
+        let o = check
+            .evaluate(Output {
+                status: ExitStatus::from_raw(0),
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+            })
+            .unwrap();
+        assert_eq!(o.status, Status::Ok("No matches".into()));
+    }
+
+    #[test]
+    fn evaluate_warning() {
+        let mut check = check("journalctl-ok.sh");
+        let o = check
+            .evaluate(Output {
+                status: ExitStatus::from_raw(0),
+                stdout: "WARN 1\nWARN 2\n".as_bytes().into(),
+                stderr: Vec::new(),
+            })
+            .unwrap();
+        assert_eq!(o.status, Status::Warning(2));
+        assert_eq!(
+            o.message,
+            String::from(
+                "\
+            *** WARNING MATCHES ***\n\
+            \n\
+            WARN 1\n\
+            WARN 2\n"
+            )
+        )
+    }
+
+    #[test]
+    fn evaluate_critical() {
+        let mut check = check("journalctl-ok.sh");
+        let o = check
+            .evaluate(Output {
+                status: ExitStatus::from_raw(0),
+                stdout: "error: 1\nerror: 2\nwarning: 1\n".as_bytes().into(),
+                stderr: Vec::new(),
+            })
+            .unwrap();
+        assert_eq!(o.status, Status::Critical(2, 1));
+        assert_eq!(
+            o.message,
+            String::from(
+                "\
+            *** CRITICAL MATCHES ***\n\
+            \n\
+            error: 1\n\
+            error: 2\n\
+            \n\
+            *** WARNING MATCHES ***\n\
+            \n\
+            warning: 1\n"
+            )
+        )
+    }
+
+    #[test]
+    fn report_limit() {
+        let mut check = check("journalctl-ok.sh");
+        check.opt.limit = 1;
+        let o = check
+            .evaluate(Output {
+                status: ExitStatus::from_raw(0),
+                stdout: "WARN 1\nWARN 2\n".as_bytes().into(),
+                stderr: Vec::new(),
+            })
+            .unwrap();
+        assert_eq!(o.status, Status::Warning(2));
+        assert_eq!(
+            o.message,
+            String::from(
+                "\
+            *** WARNING MATCHES (truncated) ***\n\
+            \n\
+            WARN 1\n"
+            )
+        )
     }
 }
