@@ -52,7 +52,10 @@ pub struct Opt {
 fn run() -> Result<i32, anyhow::Error> {
     let mut check = Check::new(Opt::from_args())?;
     let out = check.evaluate(check.exec_journalctl()?)?;
-    let timestamp: String = format!("Start ==> Timestamp: {}\n", Chrono::get_utc_time());
+    let timestamp: String = format!(
+        "Start ==> Timestamp: {}\n",
+        Chrono::get_utc_timestamp_as_rfc2822()
+    );
 
     let exitcode = match out.status {
         Status::Ok(summary) => {
@@ -77,7 +80,10 @@ fn run() -> Result<i32, anyhow::Error> {
 
     write!(stdout(), "{}", &out.message).ok();
 
-    let timestamp_end: String = format!("\nFinished ==> Timestamp: {}", Chrono::get_utc_time());
+    let timestamp_end: String = format!(
+        "\nFinished ==> Timestamp: {}",
+        Chrono::get_utc_timestamp_as_rfc2822()
+    );
     println!("{}", timestamp_end);
     Ok(exitcode)
 }
