@@ -1,5 +1,5 @@
 # Build expression for NixOS 20.09
-{ pkgs ? import <nixpkgs> {} }:
+{ pkgs ? import <nixpkgs> { } }:
 
 with pkgs.lib;
 with pkgs.rustPlatform;
