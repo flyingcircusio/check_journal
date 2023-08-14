@@ -27,7 +27,7 @@ pub struct Opt {
     no_limit: bool,
     /// Filter one or multiple systemd units or patterns. See journalctl --unit.
     /// Can be specified multiple times.
-    #[structopt(short, long, value_name = "UNIT|PATTERN")]
+    #[structopt(short, long, number_of_values = 1, value_name = "UNIT|PATTERN")]
     unit: Option<Vec<String>>,
     /// Saves last log position for exact resume
     #[structopt(short = "f", long, value_name = "PATH")]
