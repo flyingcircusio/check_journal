@@ -82,6 +82,14 @@ impl Check {
         cmd.arg("--no-pager")
             .arg(&format!("--since=-{}", self.opt.span))
             .stdin(Stdio::null());
+        if let Some(units) = &self.opt.unit {
+            cmd.args(
+                units
+                    .iter()
+                    .map(|u| format!("--unit={}", u))
+                    .collect::<Vec<_>>(),
+            );
+        }
         if let Some(sf) = &self.opt.statefile {
             cmd.arg(&format!("--cursor-file={}", sf.display()));
         }
