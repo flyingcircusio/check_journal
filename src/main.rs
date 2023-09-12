@@ -25,6 +25,9 @@ pub struct Opt {
     /// Does not truncate output (opposite of --limit)
     #[structopt(short = "L", long, conflicts_with = "limit")]
     no_limit: bool,
+    /// Request user unit logs
+    #[structopt(long)]
+    user: bool,
     /// Saves last log position for exact resume
     #[structopt(short = "f", long, value_name = "PATH")]
     statefile: Option<PathBuf>,
