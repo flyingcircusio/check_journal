@@ -29,6 +29,9 @@ pub struct Opt {
     /// Can be specified multiple times.
     #[structopt(short, long, number_of_values = 1, value_name = "UNIT|PATTERN")]
     unit: Option<Vec<String>>,
+    /// Request user unit logs
+    #[structopt(long)]
+    user: bool,
     /// Saves last log position for exact resume
     #[structopt(short = "f", long, value_name = "PATH")]
     statefile: Option<PathBuf>,

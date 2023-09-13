@@ -89,6 +89,8 @@ impl Check {
                     .map(|u| format!("--unit={}", u))
                     .collect::<Vec<_>>(),
             );
+        if self.opt.user {
+            cmd.arg("--user");
         }
         if let Some(sf) = &self.opt.statefile {
             cmd.arg(&format!("--cursor-file={}", sf.display()));

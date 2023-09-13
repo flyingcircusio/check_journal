@@ -44,6 +44,8 @@ systems.
 * `-j`, `--journalctl` <PATH>:
     Specifies the journalctl executable.
 
+* `--user`:
+   Search messages from services of the current user.
 
 ## ENVIRONMENT
 
