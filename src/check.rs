@@ -82,6 +82,13 @@ impl Check {
         cmd.arg("--no-pager")
             .arg(&format!("--since=-{}", self.opt.span))
             .stdin(Stdio::null());
+        if let Some(units) = &self.opt.unit {
+            cmd.args(
+                units
+                    .iter()
+                    .map(|u| format!("--unit={}", u))
+                    .collect::<Vec<_>>(),
+            );
         if self.opt.user {
             cmd.arg("--user");
         }
